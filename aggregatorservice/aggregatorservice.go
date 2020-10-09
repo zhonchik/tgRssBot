@@ -9,36 +9,51 @@ import (
 	"strings"
 	"tgRssBot/botcontroller"
 	"tgRssBot/feeds"
+	"tgRssBot/storage"
 	"tgRssBot/types"
 	"time"
 )
 
 type (
 	AggregatorOptions struct {
-		BotOptions botcontroller.BotOptions
+		BotOptions     botcontroller.BotOptions
+		StorageOptions storage.Options
 	}
 
 	AggregatorService struct {
-		options           AggregatorOptions
-		botController     *botcontroller.BotController
-		feeds             map[string]*types.FeedOptions
-		messageQueue      chan types.Message
-		processedMessages map[types.Message]bool
+		options       AggregatorOptions
+		botController *botcontroller.BotController
+		storage       *storage.Storage
+		feeds         map[string]*types.FeedOptions
+		messageQueue  chan types.Message
 	}
 )
 
-func NewAggregatorService(options AggregatorOptions) *AggregatorService {
+func NewAggregatorService(options AggregatorOptions) (*AggregatorService, error) {
 	bc := botcontroller.NewBotController(options.BotOptions)
 	log.Info("Bot created")
+
+	s, err := storage.NewStorage(options.StorageOptions)
+	if err != nil {
+		return nil, err
+	}
 
 	messageQueue := make(chan types.Message)
 
 	as := &AggregatorService{
-		options:           options,
-		botController:     bc,
-		feeds:             make(map[string]*types.FeedOptions),
-		messageQueue:      messageQueue,
-		processedMessages: make(map[types.Message]bool),
+		options:       options,
+		botController: bc,
+		storage:       s,
+		feeds:         make(map[string]*types.FeedOptions),
+		messageQueue:  messageQueue,
+	}
+
+	feedList, err := s.GetFeeds()
+	if err != nil {
+		return nil, err
+	}
+	for _, feed := range feedList {
+		as.addFeed(feed)
 	}
 
 	go as.processMessages()
@@ -46,7 +61,12 @@ func NewAggregatorService(options AggregatorOptions) *AggregatorService {
 	bc.AddHandler("/subscribe", as.handleSubscribeCommand)
 	bc.AddHandler("/unsubscribe", as.handleUnsubscribeCommand)
 
-	return as
+	return as, nil
+}
+
+func (as *AggregatorService) Close() error {
+	log.Info("Closing service")
+	return as.storage.Close()
 }
 
 func (as *AggregatorService) addFeed(feedOptions *types.FeedOptions) {
@@ -57,22 +77,14 @@ func (as *AggregatorService) addFeed(feedOptions *types.FeedOptions) {
 
 func (as *AggregatorService) processMessages() {
 	for message := range as.messageQueue {
-		var processedMessages []types.Message
-		if as.processedMessages[message] {
+		if as.storage.IsProcessed(message) {
 			continue
 		}
 		log.Infof("New message %+v", message)
 		err := as.botController.SendTextMessage(message.ChatID, message.URL)
 		if err == nil {
-			processedMessages = append(processedMessages, message)
+			_ = as.storage.MarkAsProcessed(message)
 		}
-		as.markAsProcessed(processedMessages)
-	}
-}
-
-func (as *AggregatorService) markAsProcessed(messages []types.Message) {
-	for _, message := range messages {
-		as.processedMessages[message] = true
 	}
 }
 
@@ -90,6 +102,10 @@ func (as *AggregatorService) handleSubscribeCommand(ctx tb.Context) error {
 		}
 		needStartReader = needStartReader || !feed.Chats[chatID]
 		feed.Chats[chatID] = true
+		err := as.storage.SaveFeed(feed)
+		if err != nil {
+			return err
+		}
 		if needStartReader {
 			as.addFeed(feed)
 		}
@@ -104,6 +120,10 @@ func (as *AggregatorService) handleUnsubscribeCommand(ctx tb.Context) error {
 			return errors.New("was not subscribed")
 		}
 		delete(feed.Chats, chatID)
+		err := as.storage.SaveFeed(feed)
+		if err != nil {
+			return err
+		}
 		return nil
 	})
 }
