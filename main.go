@@ -42,10 +42,17 @@ func main() {
 	}
 
 	bo := botcontroller.BotOptions{Token: cfg.Bot.Token}
-	so := storage.Options{Path: "./storage.db"}
-	ao := aggregatorservice.AggregatorOptions{BotOptions: bo, StorageOptions: so}
+	bc := botcontroller.NewBotController(bo)
+	log.Info("Bot created")
 
-	as, err := aggregatorservice.NewAggregatorService(ao)
+	so := storage.Options{Path: "./storage.db"}
+	s, err := storage.NewStorage(so)
+	if err != nil {
+		log.Errorf("Failed to create storage", err)
+		return
+	}
+
+	as, err := aggregatorservice.NewAggregatorService(bc.SendTextMessage, s)
 	if err != nil {
 		log.Errorf("Failed to create service: %s", err)
 		return
@@ -59,6 +66,9 @@ func main() {
 			log.Errorf("Error on service closing: %s", err)
 		}
 	}()
+
+	bc.AddHandler(botcontroller.CommandSubscribe{AggregatorService: as, BotController: bc})
+	bc.AddHandler(botcontroller.CommandUnsubscribe{AggregatorService: as, BotController: bc})
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt)
