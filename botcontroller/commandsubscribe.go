@@ -15,7 +15,7 @@ func (c CommandSubscribe) GetCommand() string {
 }
 
 func (c CommandSubscribe) GetDescription() string {
-	return ""
+	return "Start getting feed messages (multiple urls space separated are supported)"
 }
 
 func (c CommandSubscribe) Handler(ctx tb.Context) error {

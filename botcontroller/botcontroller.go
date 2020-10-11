@@ -15,7 +15,8 @@ type (
 	}
 
 	BotController struct {
-		bot tb.Bot
+		bot      tb.Bot
+		commands []Command
 	}
 )
 
@@ -32,10 +33,7 @@ func NewBotController(options BotOptions) *BotController {
 		bot: *b,
 	}
 
-	b.Handle("/start", func(c tb.Context) error {
-		log.Infof("Start command received from %+v", c.Sender())
-		return c.Reply("Hello!")
-	})
+	b.Handle("/help", bc.helpHandler)
 
 	go func() {
 		b.Start()
@@ -45,6 +43,7 @@ func NewBotController(options BotOptions) *BotController {
 
 func (bc *BotController) AddHandler(command Command) {
 	log.Infof("Adding handler for %s command", command.GetCommand())
+	bc.commands = append(bc.commands, command)
 	bc.bot.Handle(command.GetCommand(), command.Handler)
 }
 
@@ -91,4 +90,21 @@ func (bc *BotController) getChatID(sender tb.Recipient) (int64, error) {
 		return 0, err
 	}
 	return chatID, nil
+}
+
+func (bc *BotController) helpHandler(ctx tb.Context) error {
+	var lines []string
+	for _, command := range bc.commands {
+		line := fmt.Sprintf("%s %s", command.GetCommand(), command.GetDescription())
+		lines = append(lines, line)
+	}
+	chatID, err := bc.getChatID(ctx.Sender())
+	if err != nil {
+		return err
+	}
+	err = bc.SendTextMessage(chatID, strings.Join(lines, "\n"))
+	if err != nil {
+		return err
+	}
+	return nil
 }

@@ -15,7 +15,7 @@ func (c CommandUnsubscribe) GetCommand() string {
 }
 
 func (c CommandUnsubscribe) GetDescription() string {
-	return ""
+	return "Stop getting feed messages (multiple urls space separated are supported)"
 }
 
 func (c CommandUnsubscribe) Handler(ctx tb.Context) error {
