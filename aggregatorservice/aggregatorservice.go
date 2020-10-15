@@ -2,6 +2,7 @@ package aggregatorservice
 
 import (
 	"errors"
+	"github.com/PuerkitoBio/purell"
 	log "github.com/sirupsen/logrus"
 	"tgRssBot/feeds"
 	"tgRssBot/storage"
@@ -36,6 +37,11 @@ func NewAggregatorService(
 		return nil, err
 	}
 	for _, feed := range feedList {
+		feedUrl, err := purell.NormalizeURLString(feed.FeedUrl, purell.FlagsUsuallySafeGreedy)
+		if err != nil {
+			continue
+		}
+		feed.FeedUrl = feedUrl
 		as.addFeed(feed)
 	}
 
@@ -50,6 +56,10 @@ func (as *AggregatorService) Close() error {
 }
 
 func (as *AggregatorService) TrySubscribe(chatID int64, feedUrl string) error {
+	feedUrl, err := purell.NormalizeURLString(feedUrl, purell.FlagsUsuallySafeGreedy)
+	if err != nil {
+		return errors.New("wrong url")
+	}
 	feed := as.feeds[feedUrl]
 	needStartReader := false
 	if feed == nil {
@@ -62,7 +72,7 @@ func (as *AggregatorService) TrySubscribe(chatID int64, feedUrl string) error {
 	}
 	needStartReader = needStartReader || !feed.Chats[chatID]
 	feed.Chats[chatID] = true
-	err := as.storage.SaveFeed(feed)
+	err = as.storage.SaveFeed(feed)
 	if err != nil {
 		return err
 	}
@@ -72,13 +82,17 @@ func (as *AggregatorService) TrySubscribe(chatID int64, feedUrl string) error {
 	return nil
 }
 
-func (as *AggregatorService) TryUnsubscribe(chatID int64, arg string) error {
-	feed := as.feeds[arg]
+func (as *AggregatorService) TryUnsubscribe(chatID int64, feedUrl string) error {
+	feedUrl, err := purell.NormalizeURLString(feedUrl, purell.FlagsUsuallySafeGreedy)
+	if err != nil {
+		return errors.New("wrong url")
+	}
+	feed := as.feeds[feedUrl]
 	if feed == nil || !feed.Chats[chatID] {
 		return errors.New("was not subscribed")
 	}
 	delete(feed.Chats, chatID)
-	err := as.storage.SaveFeed(feed)
+	err = as.storage.SaveFeed(feed)
 	if err != nil {
 		return err
 	}
