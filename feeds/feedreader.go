@@ -23,6 +23,11 @@ func NewFeedReader(options *types.FeedOptions) *FeedReader {
 func (reader *FeedReader) Run(ch chan<- types.Message) {
 	reader.IsRunning = true
 	for {
+		if len(reader.Options.Chats) == 0 {
+			log.Infof("No more subscribed chats for %s. Update finished", reader.Options.FeedUrl)
+			break
+		}
+
 		feedItems, err := reader.getFeedItems()
 		if err != nil {
 			time.Sleep(reader.Options.CheckInterval)
@@ -40,11 +45,6 @@ func (reader *FeedReader) Run(ch chan<- types.Message) {
 			items = append(items, item.Link)
 		}
 		reader.items = items
-
-		if len(reader.Options.Chats) == 0 {
-			log.Infof("No more subscribed chats for %s. Update finished", reader.Options.FeedUrl)
-			break
-		}
 
 		time.Sleep(reader.Options.CheckInterval)
 	}
