@@ -10,51 +10,69 @@ import (
 
 type (
 	FeedReader struct {
-		options *types.FeedOptions
+		Options   *types.FeedOptions
+		IsRunning bool
+		items     []string
 	}
 )
 
 func NewFeedReader(options *types.FeedOptions) *FeedReader {
-	return &FeedReader{options}
+	return &FeedReader{Options: options}
 }
 
 func (reader *FeedReader) Run(ch chan<- types.Message) {
+	reader.IsRunning = true
 	for {
-		items, err := reader.getFeedItems()
+		feedItems, err := reader.getFeedItems()
 		if err != nil {
-			time.Sleep(reader.options.CheckInterval)
+			time.Sleep(reader.Options.CheckInterval)
 			continue
 		}
 
-		for _, item := range items {
-			for chatID := range reader.options.Chats {
+		var items []string
+		for _, item := range feedItems {
+			for chatID := range reader.Options.Chats {
 				ch <- types.Message{
 					ChatID: chatID,
 					URL:    item.Link,
 				}
 			}
+			items = append(items, item.Link)
+		}
+		reader.items = items
+
+		if len(reader.Options.Chats) == 0 {
+			log.Infof("No more subscribed chats for %s. Update finished", reader.Options.FeedUrl)
+			break
 		}
 
-		if len(reader.options.Chats) == 0 {
-			log.Infof("No more subscribed chats for %s. Update finished", reader.options.FeedUrl)
-			return
-		}
-
-		time.Sleep(reader.options.CheckInterval)
+		time.Sleep(reader.Options.CheckInterval)
 	}
+	reader.IsRunning = false
 }
 
-func (reader *FeedReader) CheckFeed() error {
-	_, err := reader.getFeedItems()
-	return err
+func (reader *FeedReader) GetItems() ([]string, error) {
+	if reader.items != nil {
+		return reader.items, nil
+	}
+	feedItems, err := reader.getFeedItems()
+	if err != nil {
+		return nil, err
+	}
+
+	var items []string
+	for _, item := range feedItems {
+		items = append(items, item.Link)
+	}
+	return items, nil
 }
 
 func (reader *FeedReader) getFeedItems() ([]*gofeed.Item, error) {
-	log.Printf("Reading feed %s", reader.options.FeedUrl)
+	log.Printf("Reading feed %s", reader.Options.FeedUrl)
 	parser := gofeed.NewParser()
-	feed, err := parser.ParseURL(reader.options.FeedUrl)
+	feed, err := parser.ParseURL(reader.Options.FeedUrl)
 	if err != nil {
-		log.Printf("Failed to update feed at %s", reader.options.FeedUrl)
+		log.Printf("Failed to update feed at %s, %s", reader.Options.FeedUrl, err)
 		return nil, err
 	}
 

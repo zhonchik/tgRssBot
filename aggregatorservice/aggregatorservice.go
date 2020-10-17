@@ -14,7 +14,7 @@ type (
 	AggregatorService struct {
 		sendMessage  func(chatID int64, message string) error
 		storage      *storage.Storage
-		feeds        map[string]*types.FeedOptions
+		feeds        map[string]*feeds.FeedReader
 		messageQueue chan types.Message
 	}
 )
@@ -28,7 +28,7 @@ func NewAggregatorService(
 	as := &AggregatorService{
 		sendMessage:  messageSender,
 		storage:      st,
-		feeds:        make(map[string]*types.FeedOptions),
+		feeds:        make(map[string]*feeds.FeedReader),
 		messageQueue: messageQueue,
 	}
 
@@ -42,7 +42,7 @@ func NewAggregatorService(
 			continue
 		}
 		feed.FeedUrl = feedUrl
-		as.addFeed(feed)
+		as.addReader(feed)
 	}
 
 	go as.processMessages()
@@ -60,24 +60,34 @@ func (as *AggregatorService) TrySubscribe(chatID int64, feedUrl string) error {
 	if err != nil {
 		return errors.New("wrong url")
 	}
-	feed := as.feeds[feedUrl]
-	needStartReader := false
-	if feed == nil {
-		feed = &types.FeedOptions{
+	reader := as.feeds[feedUrl]
+	if reader == nil {
+		feedOptions := &types.FeedOptions{
 			FeedUrl:       feedUrl,
 			Chats:         map[int64]bool{chatID: true},
 			CheckInterval: time.Minute,
 		}
-		needStartReader = true
+		reader = feeds.NewFeedReader(feedOptions)
+		as.feeds[feedOptions.FeedUrl] = reader
 	}
-	needStartReader = needStartReader || !feed.Chats[chatID]
-	feed.Chats[chatID] = true
-	err = as.storage.SaveFeed(feed)
+
+	items, err := reader.GetItems()
+	if err == nil {
+		for _, item := range items {
+			message := types.Message{ChatID: chatID, URL: item}
+			_ = as.storage.MarkAsProcessed(message)
+		}
+	} else {
+		return errors.New("unsupported feed format")
+	}
+
+	reader.Options.Chats[chatID] = true
+	err = as.storage.SaveFeed(reader.Options)
 	if err != nil {
 		return err
 	}
-	if needStartReader {
-		as.addFeed(feed)
+	if !reader.IsRunning {
+		go reader.Run(as.messageQueue)
 	}
 	return nil
 }
@@ -87,22 +97,22 @@ func (as *AggregatorService) TryUnsubscribe(chatID int64, feedUrl string) error 
 	if err != nil {
 		return errors.New("wrong url")
 	}
-	feed := as.feeds[feedUrl]
-	if feed == nil || !feed.Chats[chatID] {
+	reader := as.feeds[feedUrl]
+	if reader == nil || !reader.Options.Chats[chatID] {
 		return errors.New("was not subscribed")
 	}
-	delete(feed.Chats, chatID)
-	err = as.storage.SaveFeed(feed)
+	delete(reader.Options.Chats, chatID)
+	err = as.storage.SaveFeed(reader.Options)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (as *AggregatorService) addFeed(feedOptions *types.FeedOptions) {
+func (as *AggregatorService) addReader(feedOptions *types.FeedOptions) {
 	fr := feeds.NewFeedReader(feedOptions)
 	go fr.Run(as.messageQueue)
-	as.feeds[feedOptions.FeedUrl] = feedOptions
+	as.feeds[feedOptions.FeedUrl] = fr
 }
 
 func (as *AggregatorService) processMessages() {
