@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/PuerkitoBio/purell"
 	log "github.com/sirupsen/logrus"
+	"strings"
 	"tgRssBot/feeds"
 	"tgRssBot/storage"
 	"tgRssBot/types"
@@ -107,6 +108,31 @@ func (as *AggregatorService) TryUnsubscribe(chatID int64, feedUrl string) error 
 		return err
 	}
 	return nil
+}
+
+func (as *AggregatorService) GetFeedList(chatID int64) (string, error) {
+	var lines []string
+	var subscribed []string
+	var suggestions []string
+
+	for feedUrl, reader := range as.feeds {
+		if reader.Options.Chats[chatID] {
+			subscribed = append(subscribed, feedUrl)
+		} else {
+			suggestions = append(suggestions, feedUrl)
+		}
+	}
+
+	if len(subscribed) > 0 {
+		lines = append(lines, "Subscribed:")
+		lines = append(lines, subscribed...)
+	}
+
+	if len(suggestions) > 0 {
+		lines = append(lines, "Suggestions:")
+		lines = append(lines, suggestions...)
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
 func (as *AggregatorService) addReader(feedOptions *types.FeedOptions) {

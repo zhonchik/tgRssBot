@@ -58,6 +58,20 @@ func (bc *BotController) SendTextMessage(chatID int64, message string) error {
 	return err
 }
 
+func (bc *BotController) HandleNoArgCommand(ctx tb.Context, handler func(chatID int64) (string, error)) error {
+	sender := ctx.Sender()
+	log.Infof("%s command received from %+v", ctx.Message().Text, sender)
+	chatID, err := bc.getChatID(sender)
+	if err != nil {
+		return err
+	}
+	text, err := handler(chatID)
+	if err != nil {
+		text = fmt.Sprintf("%s", err)
+	}
+	return bc.SendTextMessage(chatID, text)
+}
+
 func (bc *BotController) HandleMultiArgCommand(ctx tb.Context, handler func(chatID int64, arg string) error) error {
 	sender := ctx.Sender()
 	log.Infof("%s command received from %+v", ctx.Message().Text, sender)

@@ -69,6 +69,7 @@ func main() {
 
 	bc.AddHandler(botcontroller.CommandSubscribe{AggregatorService: as, BotController: bc})
 	bc.AddHandler(botcontroller.CommandUnsubscribe{AggregatorService: as, BotController: bc})
+	bc.AddHandler(botcontroller.CommandList{AggregatorService: as, BotController: bc})
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt)
