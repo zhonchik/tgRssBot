@@ -94,7 +94,13 @@ func (bc *BotController) HandleMultiArgCommand(ctx tb.Context, handler func(chat
 		}
 		lines = append(lines, line)
 	}
-	return bc.SendTextMessage(chatID, strings.Join(lines, "\n"))
+	var text string
+	if len(lines) == 0 {
+		text = "One or more arguments expected"
+	} else {
+		text = strings.Join(lines, "\n")
+	}
+	return bc.SendTextMessage(chatID, text)
 }
 
 func (bc *BotController) getChatID(sender tb.Recipient) (int64, error) {
