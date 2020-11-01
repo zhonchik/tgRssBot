@@ -15,6 +15,7 @@ type (
 	AggregatorService struct {
 		sendMessage  func(chatID int64, message string) error
 		storage      *storage.Storage
+		chats        map[int64]*types.Chat
 		feeds        map[string]*feeds.FeedReader
 		messageQueue chan types.Message
 	}
@@ -29,6 +30,7 @@ func NewAggregatorService(
 	as := &AggregatorService{
 		sendMessage:  messageSender,
 		storage:      st,
+		chats:        make(map[int64]*types.Chat),
 		feeds:        make(map[string]*feeds.FeedReader),
 		messageQueue: messageQueue,
 	}
@@ -45,6 +47,10 @@ func NewAggregatorService(
 		feed.FeedUrl = feedUrl
 		as.addReader(feed)
 	}
+	as.chats, err = st.GetChats()
+	if err != nil {
+		log.Warnf("Failed to read chats: %s", err)
+	}
 
 	go as.processMessages()
 
@@ -56,8 +62,26 @@ func (as *AggregatorService) Close() error {
 	return as.storage.Close()
 }
 
+func (as *AggregatorService) Start(chatID int64) (string, error) {
+	chat := as.chats[chatID]
+	if chat != nil {
+		return "", errors.New("i know you")
+	}
+	chat = &types.Chat{}
+	as.chats[chatID] = chat
+	err := as.storage.SaveChat(chatID, chat)
+	if err != nil {
+		return "", err
+	}
+	return "you're welcome", nil
+}
+
 func (as *AggregatorService) TrySubscribe(chatID int64, feedUrl string) error {
-	feedUrl, err := purell.NormalizeURLString(feedUrl, purell.FlagsUsuallySafeGreedy)
+	err := as.checkChat(chatID)
+	if err != nil {
+		return err
+	}
+	feedUrl, err = purell.NormalizeURLString(feedUrl, purell.FlagsUsuallySafeGreedy)
 	if err != nil {
 		return errors.New("wrong url")
 	}
@@ -94,7 +118,11 @@ func (as *AggregatorService) TrySubscribe(chatID int64, feedUrl string) error {
 }
 
 func (as *AggregatorService) TryUnsubscribe(chatID int64, feedUrl string) error {
-	feedUrl, err := purell.NormalizeURLString(feedUrl, purell.FlagsUsuallySafeGreedy)
+	err := as.checkChat(chatID)
+	if err != nil {
+		return err
+	}
+	feedUrl, err = purell.NormalizeURLString(feedUrl, purell.FlagsUsuallySafeGreedy)
 	if err != nil {
 		return errors.New("wrong url")
 	}
@@ -111,6 +139,10 @@ func (as *AggregatorService) TryUnsubscribe(chatID int64, feedUrl string) error 
 }
 
 func (as *AggregatorService) GetFeedList(chatID int64) (string, error) {
+	err := as.checkChat(chatID)
+	if err != nil {
+		return "", err
+	}
 	var lines []string
 	var subscribed []string
 	var suggestions []string
@@ -133,6 +165,13 @@ func (as *AggregatorService) GetFeedList(chatID int64) (string, error) {
 		lines = append(lines, suggestions...)
 	}
 	return strings.Join(lines, "\n"), nil
+}
+
+func (as *AggregatorService) checkChat(chatID int64) error {
+	if as.chats[chatID] == nil {
+		return errors.New("i don't know you")
+	}
+	return nil
 }
 
 func (as *AggregatorService) addReader(feedOptions *types.FeedOptions) {

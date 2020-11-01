@@ -31,6 +31,10 @@ func NewStorage(options Options) (*Storage, error) {
 		if err != nil {
 			return fmt.Errorf("create bucket: %s", err)
 		}
+		_, err = tx.CreateBucketIfNotExists([]byte("Chats"))
+		if err != nil {
+			return fmt.Errorf("create bucket: %s", err)
+		}
 		_, err = tx.CreateBucketIfNotExists([]byte("ProcessedMessages"))
 		if err != nil {
 			return fmt.Errorf("create bucket: %s", err)
@@ -113,6 +117,53 @@ func (storage *Storage) SaveFeed(feed *types.FeedOptions) error {
 		b := tx.Bucket([]byte("Feeds"))
 		key := []byte(feed.FeedUrl)
 		value, err := json.Marshal(feed)
+		if err != nil {
+			return err
+		}
+		err = b.Put(key, value)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (storage *Storage) GetChats() (map[int64]*types.Chat, error) {
+	var chats = make(map[int64]*types.Chat)
+	err := storage.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("Chats"))
+		c := b.Cursor()
+
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			var chatID int64
+			err := json.Unmarshal(k, &chatID)
+			if err != nil {
+				return err
+			}
+			chat := &types.Chat{}
+			err = json.Unmarshal(v, chat)
+			if err != nil {
+				return err
+			}
+			chats[chatID] = chat
+		}
+		return nil
+	})
+	return chats, err
+}
+
+func (storage *Storage) SaveChat(chatID int64, chat *types.Chat) error {
+	err := storage.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("Chats"))
+		key, err := json.Marshal(chatID)
+		if err != nil {
+			return err
+		}
+		value, err := json.Marshal(chat)
 		if err != nil {
 			return err
 		}
