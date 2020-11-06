@@ -27,7 +27,7 @@ type (
 func main() {
 	err := configureLogger()
 	if err != nil {
-		log.Errorf("Failed to configure logger", err)
+		log.Errorf("Failed to configure logger: %s", err)
 		return
 	}
 
@@ -37,7 +37,7 @@ func main() {
 	)
 	err = loader.Load(context.Background(), &cfg)
 	if err != nil {
-		log.Errorf("Failed to load config", err)
+		log.Errorf("Failed to load config: %s", err)
 		return
 	}
 
@@ -48,7 +48,7 @@ func main() {
 	so := storage.Options{Path: "./storage.db"}
 	s, err := storage.NewStorage(so)
 	if err != nil {
-		log.Errorf("Failed to create storage", err)
+		log.Errorf("Failed to create storage: %s", err)
 		return
 	}
 
