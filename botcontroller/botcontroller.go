@@ -58,12 +58,22 @@ func (bc *BotController) SendTextMessage(chatID int64, message string) error {
 	return err
 }
 
-func (bc *BotController) HandleNoArgCommand(ctx tb.Context, handler func(chatID int64) (string, error)) error {
+func (bc *BotController) HandleNoArgCommand(
+	ctx tb.Context,
+	checker func(chatID int64) error,
+	handler func(chatID int64) (string, error),
+) error {
 	sender := ctx.Sender()
 	log.Infof("%s command received from %+v", ctx.Message().Text, sender)
 	chatID, err := bc.getChatID(sender)
 	if err != nil {
 		return err
+	}
+	if checker != nil {
+		err = checker(chatID)
+		if err != nil {
+			return bc.SendTextMessage(chatID, fmt.Sprintf("%s", err))
+		}
 	}
 	text, err := handler(chatID)
 	if err != nil {
@@ -72,12 +82,22 @@ func (bc *BotController) HandleNoArgCommand(ctx tb.Context, handler func(chatID 
 	return bc.SendTextMessage(chatID, text)
 }
 
-func (bc *BotController) HandleMultiArgCommand(ctx tb.Context, handler func(chatID int64, arg string) error) error {
+func (bc *BotController) HandleMultiArgCommand(
+	ctx tb.Context,
+	checker func(chatID int64) error,
+	handler func(chatID int64, arg string) error,
+) error {
 	sender := ctx.Sender()
 	log.Infof("%s command received from %+v", ctx.Message().Text, sender)
 	chatID, err := bc.getChatID(sender)
 	if err != nil {
 		return err
+	}
+	if checker != nil {
+		err = checker(chatID)
+		if err != nil {
+			return bc.SendTextMessage(chatID, fmt.Sprintf("%s", err))
+		}
 	}
 	var lines []string
 	for _, arg := range ctx.Args() {

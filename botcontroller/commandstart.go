@@ -19,5 +19,5 @@ func (c CommandStart) GetDescription() string {
 }
 
 func (c CommandStart) Handler(ctx tb.Context) error {
-	return c.BotController.HandleNoArgCommand(ctx, c.AggregatorService.Start)
+	return c.BotController.HandleNoArgCommand(ctx, nil, c.AggregatorService.Start)
 }

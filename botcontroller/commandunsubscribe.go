@@ -19,5 +19,5 @@ func (c CommandUnsubscribe) GetDescription() string {
 }
 
 func (c CommandUnsubscribe) Handler(ctx tb.Context) error {
-	return c.BotController.HandleMultiArgCommand(ctx, c.AggregatorService.TryUnsubscribe)
+	return c.BotController.HandleMultiArgCommand(ctx, c.AggregatorService.CheckChat, c.AggregatorService.TryUnsubscribe)
 }
