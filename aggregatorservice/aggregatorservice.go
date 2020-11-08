@@ -164,7 +164,11 @@ func (as *AggregatorService) GetFeedList(chatID int64) (string, error) {
 		lines = append(lines, "Suggestions:")
 		lines = append(lines, suggestions...)
 	}
-	return strings.Join(lines, "\n"), nil
+	text := strings.Join(lines, "\n")
+	if text == "" {
+		text = "No subscriptions yet. Try to /subscribe"
+	}
+	return text, nil
 }
 
 func (as *AggregatorService) checkChat(chatID int64) error {
