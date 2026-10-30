@@ -70,8 +70,9 @@ it when the new service fails its ten-second systemd activity check. This is a
 process check; it does not verify Telegram connectivity or bot responses.
 
 Once setup and CI are verified, create and push a stable tag on a commit belonging
-to `master` to deploy. A normal branch push does not deploy. No release tag is
-created by these workflows.
+to `master` to deploy. Both workflows run only on pushed version tags (`v*`);
+branch updates and pull requests do not trigger Actions. No release tag is created
+by these workflows.
 
 Inspect the server with `systemctl status tgrssbot.service` and
 `journalctl -u tgrssbot.service`. Application logs are also under
