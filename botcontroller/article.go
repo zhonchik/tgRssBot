@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"tgRssBot/types"
+	"unicode/utf16"
 )
 
 // SendArticle bypasses automatic link previews and uses Telegram's expandable
@@ -18,8 +19,13 @@ func (bc *BotController) SendArticle(message types.Message) error {
 type articleAPI func(string, interface{}) ([]byte, error)
 
 func sendArticle(call articleAPI, message types.Message) error {
-	pages := articlePages(message)
-	text := pages[0]
+	firstLimit := 3200
+	if message.ImageURL != "" {
+		title := html.UnescapeString(strings.TrimSuffix(strings.TrimPrefix(articleTitle(message.Title), "<b>"), "</b>"))
+		// Reserve the visible title, source link and paragraph separators.
+		firstLimit = 1024 - len(utf16.Encode([]rune(title))) - len("Original article") - 12
+	}
+	pages := articlePagesWithLimit(message, firstLimit)
 	sendText := func(text string) error {
 		_, err := call("sendMessage", map[string]interface{}{
 			"chat_id": message.ChatID, "text": text, "parse_mode": "HTML",
@@ -39,20 +45,11 @@ func sendArticle(call articleAPI, message types.Message) error {
 	if message.ImageURL == "" {
 		return sendPages(pages)
 	}
-	title := articleTitle(message.Title)
-	if err := sendText(title); err != nil {
-		return err
-	}
-	body := strings.TrimPrefix(text, title+"\n\n")
-	caption := body
-	if len(caption) > 1024 {
-		caption = ""
-	}
 	_, err := call("sendPhoto", map[string]interface{}{
 		"chat_id": message.ChatID, "photo": message.ImageURL,
-		"caption": caption, "parse_mode": "HTML",
+		"caption": pages[0], "parse_mode": "HTML",
 	})
-	if err == nil && caption != "" {
+	if err == nil {
 		return sendPages(pages[1:])
 	}
 	// A rejected image must not suppress the article. Retry ambiguous transport
@@ -63,14 +60,17 @@ func sendArticle(call articleAPI, message types.Message) error {
 			return err
 		}
 	}
-	pages[0] = body
-	return sendPages(pages)
+	return sendPages(articlePages(message))
 }
 
 // Keep all feed text, splitting only when Telegram's message limit requires it.
 func articlePages(message types.Message) []string {
+	return articlePagesWithLimit(message, 3200)
+}
+
+func articlePagesWithLimit(message types.Message, firstLimit int) []string {
 	remaining := strings.TrimSpace(message.Text)
-	first, remaining := takeText(remaining, 3200)
+	first, remaining := takeText(remaining, firstLimit)
 	message.Text = first
 	pages := []string{articleHTML(message)}
 	for remaining != "" {

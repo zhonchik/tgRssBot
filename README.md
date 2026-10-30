@@ -79,13 +79,13 @@ Inspect the server with `systemctl status tgrssbot.service` and
 
 ## News presentation
 
-News uses a bold headline above the main picture. The first paragraph (up to a
-short excerpt for long paragraphs) is visible; remaining feed text is in
-Telegram expandable quotes. Each article includes an **Original article** link,
-and automatic web previews are disabled. The headline and picture are separate
-messages to preserve their order. Text exceeding the photo caption limit follows
-in a text message; articles exceeding the message limit continue in collapsed
-text messages. Missing or rejected pictures fall back to text.
+News uses the main picture with a bold headline beneath it in the same message.
+The first paragraph (up to a short excerpt for long paragraphs) is visible;
+remaining feed text is in Telegram expandable quotes. Each article includes an
+**Original article** link, and automatic web previews are disabled. The picture,
+headline, excerpt, and link share one photo caption. Text exceeding the caption
+limit continues in collapsed text messages. Missing or rejected pictures fall
+back to text.
 
 Content comes from the RSS/Atom entry (full content when available, otherwise
 its description). Images use the entry image, Media RSS, image enclosures, or

@@ -32,21 +32,39 @@ func TestArticleDelivery(t *testing.T) {
 		name, body, photoError string
 		want                   []string
 	}{
-		{"short", "Lead.\n\nRest.", "", []string{"sendMessage", "sendPhoto"}},
-		{"long", strings.Repeat("word ", 600), "", []string{"sendMessage", "sendPhoto", "sendMessage"}},
-		{"bad image", "Lead.", "Bad Request: failed to get HTTP URL content", []string{"sendMessage", "sendPhoto", "sendMessage"}},
-		{"transport", "Lead.", "timeout", []string{"sendMessage", "sendPhoto"}},
+		{"short", "Lead.\n\nRest.", "", []string{"sendPhoto"}},
+		{"fits caption", strings.Repeat("a", 800), "", []string{"sendPhoto"}},
+		{"long", strings.Repeat("word ", 600), "", []string{"sendPhoto", "sendMessage"}},
+		{"bad image", "Lead.", "Bad Request: failed to get HTTP URL content", []string{"sendPhoto", "sendMessage"}},
+		{"transport", "Lead.", "timeout", []string{"sendPhoto"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var methods []string
 			err := sendArticle(func(method string, payload interface{}) ([]byte, error) {
 				methods = append(methods, method)
 				p := payload.(map[string]interface{})
-				if len(methods) == 1 && p["text"] != "<b>Headline</b>" {
-					t.Fatal("headline must precede picture")
-				}
+
 				if method == "sendPhoto" {
-					if len(p["caption"].(string)) > 1024 {
+					caption := p["caption"].(string)
+					if !strings.HasPrefix(caption, "<b>Headline</b>") || !strings.Contains(caption, "Original article") {
+						t.Fatal("caption must include headline and article link")
+					}
+					root, parseErr := xhtml.Parse(strings.NewReader(caption))
+					if parseErr != nil {
+						t.Fatal(parseErr)
+					}
+					visible := ""
+					var walk func(*xhtml.Node)
+					walk = func(n *xhtml.Node) {
+						if n.Type == xhtml.TextNode {
+							visible += n.Data
+						}
+						for c := n.FirstChild; c != nil; c = c.NextSibling {
+							walk(c)
+						}
+					}
+					walk(root)
+					if len(utf16.Encode([]rune(visible))) > 1024 {
 						t.Fatal("oversized caption")
 					}
 					if tc.photoError != "" {
@@ -70,7 +88,7 @@ func TestArticleDelivery(t *testing.T) {
 
 func TestLongArticlePreservesText(t *testing.T) {
 	body := strings.Repeat("😀<&>word ", 1800)
-	pages := articlePages(types.Message{Title: "Title", Text: body, URL: "https://example.com"})
+	pages := articlePagesWithLimit(types.Message{Title: "Title", Text: body, URL: "https://example.com"}, 650)
 	if len(pages) < 2 {
 		t.Fatal("expected multiple pages")
 	}
@@ -94,7 +112,11 @@ func TestLongArticlePreservesText(t *testing.T) {
 			}
 		}
 		walk(root)
-		if len(utf16.Encode([]rune(rendered))) > 4096 {
+		limit := 4096
+		if i == 0 {
+			limit = 1024 - 256 - 32
+		}
+		if len(utf16.Encode([]rune(rendered))) > limit {
 			t.Fatal("oversized message")
 		}
 		recovered += strings.Join(strings.Fields(rendered), "")
