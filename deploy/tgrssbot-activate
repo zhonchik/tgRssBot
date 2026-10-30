@@ -1,0 +1,31 @@
+#!/bin/bash
+set -euo pipefail
+exec 9>/run/lock/tgrssbot-deploy.lock
+flock -n 9
+cd /opt/tgrssbot
+test -f incoming/tgRssBot
+test ! -L incoming/tgRssBot
+install -o root -g root -m 755 incoming/tgRssBot tgRssBot.new
+had_previous=false
+if test -f tgRssBot; then
+  cp -p tgRssBot tgRssBot.previous
+  had_previous=true
+fi
+mv -f tgRssBot.new tgRssBot
+healthy=false
+if systemctl restart tgrssbot.service; then
+  sleep 10
+  if systemctl is-active --quiet tgrssbot.service; then
+    healthy=true
+  fi
+fi
+if ! "$healthy"; then
+  systemctl stop tgrssbot.service
+  if "$had_previous"; then
+    mv -f tgRssBot.previous tgRssBot
+    systemctl reset-failed tgrssbot.service
+    systemctl start tgrssbot.service
+  fi
+  echo 'Deployment failed; restored previous binary when available' >&2
+  exit 1
+fi

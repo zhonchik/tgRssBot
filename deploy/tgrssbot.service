@@ -1,0 +1,27 @@
+[Unit]
+Description=Telegram RSS bot
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=tgrssbot
+Group=tgrssbot
+WorkingDirectory=/var/lib/tgrssbot
+ExecStart=/opt/tgrssbot/tgRssBot
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+UMask=0077
+StateDirectory=tgrssbot
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/tgrssbot
+
+[Install]
+WantedBy=multi-user.target

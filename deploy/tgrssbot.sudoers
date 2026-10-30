@@ -1,0 +1,1 @@
+tgrssbot-deploy ALL=(root) NOPASSWD: /usr/local/sbin/tgrssbot-activate ""

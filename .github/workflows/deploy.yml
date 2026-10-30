@@ -1,0 +1,65 @@
+name: Deploy
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require a stable semver tag on master
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          git fetch origin master
+          git merge-base --is-ancestor HEAD origin/master
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - run: go mod download all
+      - run: go mod verify
+      - run: go test -mod=readonly ./...
+      - run: go vet -mod=readonly ./...
+      - run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=readonly -trimpath -o dist/tgRssBot .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deployment
+          path: dist/tgRssBot
+          retention-days: 7
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: deployment
+          path: dist
+      - name: Install SSH credentials
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          test -n "$SSH_KEY"
+          test -n "$KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Upload and activate
+        run: |
+          remote=tgrssbot-deploy@v245006.hosted-by-vdsina.com
+          opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20)
+          scp "${opts[@]}" dist/tgRssBot "$remote:/opt/tgrssbot/incoming/tgRssBot"
+          ssh "${opts[@]}" "$remote" sudo -n /usr/local/sbin/tgrssbot-activate
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
