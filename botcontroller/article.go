@@ -23,7 +23,7 @@ func sendArticle(call articleAPI, message types.Message) error {
 	if message.ImageURL != "" {
 		title := html.UnescapeString(strings.TrimSuffix(strings.TrimPrefix(articleTitle(message.Title), "<b>"), "</b>"))
 		// Reserve the visible title, source link and paragraph separators.
-		firstLimit = 1024 - len(utf16.Encode([]rune(title))) - len("Original article") - 12
+		firstLimit = 1024 - len(utf16.Encode([]rune(title))) - len("Source") - 12
 	}
 	pages := articlePagesWithLimit(message, firstLimit)
 	sendText := func(text string) error {
@@ -144,7 +144,7 @@ func articleHTML(message types.Message) string {
 func articleLink(address string) string {
 	u, err := url.Parse(address)
 	if err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
-		return "\n\n<a href=\"" + html.EscapeString(address) + "\">Original article</a>"
+		return "\n\n<a href=\"" + html.EscapeString(address) + "\">Source</a>"
 	}
 	return ""
 }

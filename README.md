@@ -82,7 +82,7 @@ Inspect the server with `systemctl status tgrssbot.service` and
 News uses the main picture with a bold headline beneath it in the same message.
 The first paragraph (up to a short excerpt for long paragraphs) is visible;
 remaining feed text is in Telegram expandable quotes. Each article includes an
-**Original article** link, and automatic web previews are disabled. The picture,
+**Source** link, and automatic web previews are disabled. The picture,
 headline, excerpt, and link share one photo caption. Text exceeding the caption
 limit continues in collapsed text messages. Missing or rejected pictures fall
 back to text.

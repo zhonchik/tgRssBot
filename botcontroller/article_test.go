@@ -46,7 +46,7 @@ func TestArticleDelivery(t *testing.T) {
 
 				if method == "sendPhoto" {
 					caption := p["caption"].(string)
-					if !strings.HasPrefix(caption, "<b>Headline</b>") || !strings.Contains(caption, "Original article") {
+					if !strings.HasPrefix(caption, "<b>Headline</b>") || !strings.Contains(caption, "Source") {
 						t.Fatal("caption must include headline and article link")
 					}
 					root, parseErr := xhtml.Parse(strings.NewReader(caption))
