@@ -34,7 +34,7 @@ func TestArticleDelivery(t *testing.T) {
 	}{
 		{"short", "Lead.\n\nRest.", "", []string{"sendPhoto"}},
 		{"fits caption", strings.Repeat("a", 800), "", []string{"sendPhoto"}},
-		{"long", strings.Repeat("word ", 600), "", []string{"sendPhoto", "sendMessage"}},
+		{"long", strings.Repeat("word ", 600), "", []string{"sendPhoto"}},
 		{"bad image", "Lead.", "Bad Request: failed to get HTTP URL content", []string{"sendPhoto", "sendMessage"}},
 		{"transport", "Lead.", "timeout", []string{"sendPhoto"}},
 	} {
@@ -86,45 +86,53 @@ func TestArticleDelivery(t *testing.T) {
 	}
 }
 
-func TestLongArticlePreservesText(t *testing.T) {
-	body := strings.Repeat("😀<&>word ", 1800)
-	pages := articlePagesWithLimit(types.Message{Title: "Title", Text: body, URL: "https://example.com"}, 650)
-	if len(pages) < 2 {
-		t.Fatal("expected multiple pages")
-	}
-	recovered := ""
-	for i, page := range pages {
-		root, err := xhtml.Parse(strings.NewReader(page))
-		if err != nil {
-			t.Fatal(err)
-		}
-		rendered := ""
-		var walk func(*xhtml.Node)
-		walk = func(n *xhtml.Node) {
-			if n.Type == xhtml.ElementNode && (n.Data == "b" || n.Data == "a") {
-				return
-			}
-			if n.Type == xhtml.TextNode {
-				rendered += n.Data
-			}
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				walk(c)
-			}
-		}
-		walk(root)
+func TestLongArticleSingleMessage(t *testing.T) {
+	for _, photo := range []bool{false, true} {
+		m := types.Message{Title: strings.Repeat("😀<&>", 100), Text: strings.Repeat("😀<&>word ", 1800), URL: "https://example.com"}
 		limit := 4096
-		if i == 0 {
-			limit = 1024 - 256 - 32
+		if photo {
+			m.ImageURL = "https://example.com/image.jpg"
+			limit = 1024
 		}
-		if len(utf16.Encode([]rune(rendered))) > limit {
-			t.Fatal("oversized message")
+		calls := 0
+		err := sendArticle(func(method string, payload interface{}) ([]byte, error) {
+			calls++
+			p := payload.(map[string]interface{})
+			key := "text"
+			if photo {
+				key = "caption"
+				if method != "sendPhoto" {
+					t.Fatal(method)
+				}
+			} else if method != "sendMessage" {
+				t.Fatal(method)
+			}
+			markup := p[key].(string)
+			if !strings.Contains(markup, "…") || !strings.Contains(markup, `href="https://example.com">Source</a>`) {
+				t.Fatal("missing truncation or source")
+			}
+			root, err := xhtml.Parse(strings.NewReader(markup))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var visible strings.Builder
+			var walk func(*xhtml.Node)
+			walk = func(n *xhtml.Node) {
+				if n.Type == xhtml.TextNode {
+					visible.WriteString(n.Data)
+				}
+				for c := n.FirstChild; c != nil; c = c.NextSibling {
+					walk(c)
+				}
+			}
+			walk(root)
+			if len(utf16.Encode([]rune(visible.String()))) > limit {
+				t.Fatal("message limit exceeded")
+			}
+			return nil, nil
+		}, m)
+		if err != nil || calls != 1 {
+			t.Fatalf("calls=%d error=%v", calls, err)
 		}
-		recovered += strings.Join(strings.Fields(rendered), "")
-		if i > 0 && !strings.Contains(page, "<blockquote expandable>") {
-			t.Fatal("continuation must be collapsed")
-		}
-	}
-	if recovered != strings.Join(strings.Fields(body), "") {
-		t.Fatal("article text lost")
 	}
 }

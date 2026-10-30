@@ -19,13 +19,6 @@ func (bc *BotController) SendArticle(message types.Message) error {
 type articleAPI func(string, interface{}) ([]byte, error)
 
 func sendArticle(call articleAPI, message types.Message) error {
-	firstLimit := 3200
-	if message.ImageURL != "" {
-		title := html.UnescapeString(strings.TrimSuffix(strings.TrimPrefix(articleTitle(message.Title), "<b>"), "</b>"))
-		// Reserve the visible title, source link and paragraph separators.
-		firstLimit = 1024 - len(utf16.Encode([]rune(title))) - len("Source") - 12
-	}
-	pages := articlePagesWithLimit(message, firstLimit)
 	sendText := func(text string) error {
 		_, err := call("sendMessage", map[string]interface{}{
 			"chat_id": message.ChatID, "text": text, "parse_mode": "HTML",
@@ -34,23 +27,15 @@ func sendArticle(call articleAPI, message types.Message) error {
 		})
 		return err
 	}
-	sendPages := func(pages []string) error {
-		for _, page := range pages {
-			if err := sendText(page); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
 	if message.ImageURL == "" {
-		return sendPages(pages)
+		return sendText(articleWithLimit(message, 4096))
 	}
 	_, err := call("sendPhoto", map[string]interface{}{
 		"chat_id": message.ChatID, "photo": message.ImageURL,
-		"caption": pages[0], "parse_mode": "HTML",
+		"caption": articleWithLimit(message, 1024), "parse_mode": "HTML",
 	})
 	if err == nil {
-		return sendPages(pages[1:])
+		return nil
 	}
 	// A rejected image must not suppress the article. Retry ambiguous transport
 	// failures on the next feed poll rather than marking the article delivered.
@@ -60,40 +45,16 @@ func sendArticle(call articleAPI, message types.Message) error {
 			return err
 		}
 	}
-	return sendPages(articlePages(message))
+	return sendText(articleWithLimit(message, 4096))
 }
 
-// Keep all feed text, splitting only when Telegram's message limit requires it.
-func articlePages(message types.Message) []string {
-	return articlePagesWithLimit(message, 3200)
-}
-
-func articlePagesWithLimit(message types.Message, firstLimit int) []string {
-	remaining := strings.TrimSpace(message.Text)
-	first, remaining := takeText(remaining, firstLimit)
-	message.Text = first
-	pages := []string{articleHTML(message)}
-	for remaining != "" {
-		var chunk string
-		chunk, remaining = takeText(remaining, 3200)
-		pages = append(pages, "<blockquote expandable>"+html.EscapeString(chunk)+"</blockquote>"+articleLink(message.URL))
-	}
-	return pages
-}
-
-func takeText(text string, limit int) (string, string) {
-	units := 0
-	for i, r := range text {
-		size := 1
-		if r > 0xffff {
-			size = 2
-		}
-		if units+size > limit {
-			return text[:i], text[i:]
-		}
-		units += size
-	}
-	return text, ""
+// Reserve room for the headline, Source link, and paragraph separators before
+// clipping plain text. HTML escaping happens afterwards, keeping markup intact.
+func articleWithLimit(message types.Message, limit int) string {
+	title := html.UnescapeString(strings.TrimSuffix(strings.TrimPrefix(articleTitle(message.Title), "<b>"), "</b>"))
+	bodyLimit := limit - len(utf16.Encode([]rune(title))) - len("Source") - 12
+	message.Text = clip(strings.TrimSpace(message.Text), bodyLimit)
+	return articleHTML(message)
 }
 
 func articleTitle(title string) string {

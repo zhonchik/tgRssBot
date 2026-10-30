@@ -84,9 +84,10 @@ News uses the main picture with a bold headline beneath it in the same message.
 The first paragraph (up to a short excerpt for long paragraphs) is visible;
 remaining article text is in Telegram expandable quotes. Each article includes an
 **Source** link, and automatic web previews are disabled. The picture,
-headline, excerpt, and link share one photo caption. Text exceeding the caption
-limit continues in collapsed text messages. Missing or rejected pictures fall
-back to text.
+headline, excerpt, and link share one photo caption. Each article is sent as one
+message: text is shortened with an ellipsis to fit the caption or message limit,
+with the Source link retained for reading the full article. Missing or rejected
+pictures fall back to a single text message.
 
 For new articles, the bot fetches the linked HTML page and extracts its main
 body with Readability. Requests have a 15-second timeout and a 5 MiB size limit.
@@ -95,5 +96,5 @@ JavaScript-only and paywalled text may be unavailable. Images use feed metadata
 or an inline image, with the page image as a fallback. Extraction is generic;
 individual publishers do not require configured selectors.
 Existing processed-article keys are preserved, so presentation changes do not
-resend old news. Delivery is at least once: a failure midway through a multipart
-article can cause earlier parts to repeat on the next feed poll.
+resend old news. Delivery is at least once: an ambiguous transport failure can cause a message
+to repeat on the next feed poll.
