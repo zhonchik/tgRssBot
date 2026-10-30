@@ -178,6 +178,7 @@ func (as *AggregatorService) processMessages() {
 			continue
 		}
 		log.Infof("New article %s", message.URL)
+		message = feeds.EnrichArticle(message)
 		err := as.sendMessage(message)
 		if err == nil {
 			_ = as.storage.MarkAsProcessed(message)

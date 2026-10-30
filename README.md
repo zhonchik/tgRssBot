@@ -81,15 +81,18 @@ Inspect the server with `systemctl status tgrssbot.service` and
 
 News uses the main picture with a bold headline beneath it in the same message.
 The first paragraph (up to a short excerpt for long paragraphs) is visible;
-remaining feed text is in Telegram expandable quotes. Each article includes an
+remaining article text is in Telegram expandable quotes. Each article includes an
 **Source** link, and automatic web previews are disabled. The picture,
 headline, excerpt, and link share one photo caption. Text exceeding the caption
 limit continues in collapsed text messages. Missing or rejected pictures fall
 back to text.
 
-Content comes from the RSS/Atom entry (full content when available, otherwise
-its description). Images use the entry image, Media RSS, image enclosures, or
-an inline image. The bot does not scrape the linked article for missing content.
+For new articles, the bot fetches the linked HTML page and extracts its main
+body with Readability. Requests have a 15-second timeout and a 5 MiB size limit.
+Blocked, failed, or empty pages fall back to RSS/Atom content or its description.
+JavaScript-only and paywalled text may be unavailable. Images use feed metadata
+or an inline image, with the page image as a fallback. Extraction is generic;
+individual publishers do not require configured selectors.
 Existing processed-article keys are preserved, so presentation changes do not
 resend old news. Delivery is at least once: a failure midway through a multipart
 article can cause earlier parts to repeat on the next feed poll.
