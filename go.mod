@@ -14,5 +14,6 @@ require (
 	github.com/sirupsen/logrus v1.7.0
 	github.com/tebeka/strftime v0.1.5 // indirect
 	go.etcd.io/bbolt v1.3.2
+	golang.org/x/net v0.0.0-20200301022130-244492dfa37a
 	gopkg.in/tucnak/telebot.v3 v3.0.0-20201001173248-2eadd32991dc
 )

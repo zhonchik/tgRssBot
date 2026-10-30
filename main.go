@@ -52,7 +52,7 @@ func main() {
 		return
 	}
 
-	as, err := aggregatorservice.NewAggregatorService(bc.SendTextMessage, s)
+	as, err := aggregatorservice.NewAggregatorService(bc.SendArticle, s)
 	if err != nil {
 		log.Errorf("Failed to create service: %s", err)
 		return

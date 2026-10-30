@@ -37,10 +37,9 @@ func (reader *FeedReader) Run(ch chan<- types.Message) {
 		var items []string
 		for _, item := range feedItems {
 			for chatID := range reader.Options.Chats {
-				ch <- types.Message{
-					ChatID: chatID,
-					URL:    item.Link,
-				}
+				message := articleMessage(item)
+				message.ChatID = chatID
+				ch <- message
 			}
 			items = append(items, item.Link)
 		}

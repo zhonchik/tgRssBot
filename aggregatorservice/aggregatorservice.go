@@ -13,7 +13,7 @@ import (
 
 type (
 	AggregatorService struct {
-		sendMessage  func(chatID int64, message string) error
+		sendMessage  func(message types.Message) error
 		storage      *storage.Storage
 		chats        map[int64]*types.Chat
 		feeds        map[string]*feeds.FeedReader
@@ -22,7 +22,7 @@ type (
 )
 
 func NewAggregatorService(
-	messageSender func(chatID int64, message string) error,
+	messageSender func(message types.Message) error,
 	st *storage.Storage,
 ) (*AggregatorService, error) {
 	messageQueue := make(chan types.Message)
@@ -177,8 +177,8 @@ func (as *AggregatorService) processMessages() {
 		if as.storage.IsProcessed(message) {
 			continue
 		}
-		log.Infof("New message %+v", message)
-		err := as.sendMessage(message.ChatID, message.URL)
+		log.Infof("New article %s", message.URL)
+		err := as.sendMessage(message)
 		if err == nil {
 			_ = as.storage.MarkAsProcessed(message)
 		}

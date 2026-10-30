@@ -76,3 +76,20 @@ created by these workflows.
 Inspect the server with `systemctl status tgrssbot.service` and
 `journalctl -u tgrssbot.service`. Application logs are also under
 `/var/lib/tgrssbot/logs`. Configure log retention separately.
+
+## News presentation
+
+News uses a bold headline above the main picture. The first paragraph (up to a
+short excerpt for long paragraphs) is visible; remaining feed text is in
+Telegram expandable quotes. Each article includes an **Original article** link,
+and automatic web previews are disabled. The headline and picture are separate
+messages to preserve their order. Text exceeding the photo caption limit follows
+in a text message; articles exceeding the message limit continue in collapsed
+text messages. Missing or rejected pictures fall back to text.
+
+Content comes from the RSS/Atom entry (full content when available, otherwise
+its description). Images use the entry image, Media RSS, image enclosures, or
+an inline image. The bot does not scrape the linked article for missing content.
+Existing processed-article keys are preserved, so presentation changes do not
+resend old news. Delivery is at least once: a failure midway through a multipart
+article can cause earlier parts to repeat on the next feed poll.
