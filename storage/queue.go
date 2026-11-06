@@ -67,6 +67,22 @@ func (s *Storage) Queues() ([]Subscription, error) {
 	return subs, err
 }
 
+// QueueCount returns the number of messages awaiting delivery for a subscription.
+func (s *Storage) QueueCount(sub Subscription) (int, error) {
+	key, err := json.Marshal(sub)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	err = s.db.View(func(tx *bolt.Tx) error {
+		if q := tx.Bucket(queueBucket).Bucket(key); q != nil {
+			count = q.Stats().KeyN
+		}
+		return nil
+	})
+	return count, err
+}
+
 func (s *Storage) First(sub Subscription) (types.Message, uint64, error) {
 	var m types.Message
 	var seq uint64

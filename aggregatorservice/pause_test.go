@@ -28,6 +28,14 @@ func TestPausedQueueSurvivesRestartAndSendFailure(t *testing.T) {
 	if err := s.SetPaused(1, feed, true); err != nil {
 		t.Fatal(err)
 	}
+	checkList := func(want string) {
+		t.Helper()
+		got, err := s.GetFeedList(1)
+		if err != nil || got != "Subscribed:\n"+feed+" ("+want+")" {
+			t.Fatalf("unexpected subscription list: %q, %v", got, err)
+		}
+	}
+	checkList("paused, 0 queued")
 	first := types.Message{ChatID: 1, FeedURL: feed, URL: "a", Title: "One", Text: "Article", ImageURL: "photo"}
 	second := first
 	second.URL = "b"
@@ -39,6 +47,7 @@ func TestPausedQueueSurvivesRestartAndSendFailure(t *testing.T) {
 	if sent, err := s.deliverOne(sub); sent || err != nil {
 		t.Fatal(sent, err)
 	}
+	checkList("paused, 2 queued")
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -49,9 +58,11 @@ func TestPausedQueueSurvivesRestartAndSendFailure(t *testing.T) {
 		t.Fatal(saved, err)
 	}
 	s.feeds[feed] = feeds.NewFeedReader(saved[0])
+	checkList("paused, 2 queued")
 	if err := s.SetPaused(1, feed, false); err != nil {
 		t.Fatal(err)
 	}
+	checkList("active")
 	s.sendMessage = func(types.Message) error { return errors.New("offline") }
 	if _, err := s.deliverOne(sub); err == nil {
 		t.Fatal("expected send failure")

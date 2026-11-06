@@ -2,6 +2,7 @@ package aggregatorservice
 
 import (
 	"errors"
+	"fmt"
 	"github.com/PuerkitoBio/purell"
 	log "github.com/sirupsen/logrus"
 	"net/url"
@@ -180,7 +181,15 @@ func (as *AggregatorService) GetFeedList(chatID int64) (string, error) {
 
 	for feedUrl, reader := range as.feeds {
 		if reader.Options.Chats[chatID] {
-			subscribed = append(subscribed, feedUrl)
+			status := "active"
+			if reader.Options.ForChat(chatID).Paused {
+				count, err := as.storage.QueueCount(storage.Subscription{Feed: feedUrl, Chat: chatID})
+				if err != nil {
+					return "", err
+				}
+				status = fmt.Sprintf("paused, %d queued", count)
+			}
+			subscribed = append(subscribed, feedUrl+" ("+status+")")
 		} else {
 			suggestions = append(suggestions, feedUrl)
 		}
