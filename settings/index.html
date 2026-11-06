@@ -1,0 +1,31 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Feed settings</title><script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0 auto;max-width:40rem;padding:24px 16px;background:var(--tg-theme-secondary-bg-color,#eff3f5);color:var(--tg-theme-text-color,#192534);font:16px system-ui}h1{font-size:1.7rem}form,details{background:var(--tg-theme-bg-color,white);padding:16px;border-radius:14px;margin:12px 0}form form,details form{padding:0}label{display:block;margin:14px 0 5px}input,button{font:inherit;border:1px solid #9998;border-radius:8px;padding:10px}input:not([type=checkbox]){width:100%;background:transparent;color:inherit}button{cursor:pointer;margin:12px 8px 0 0;background:var(--tg-theme-button-color,#176caf);color:var(--tg-theme-button-text-color,white)}summary{cursor:pointer;font-weight:650;overflow-wrap:anywhere}small{display:block;font-weight:400;margin-top:5px}button.remove{background:transparent;color:var(--tg-theme-destructive-text-color,#ae3434)}
+</style><main><h1>Subscriptions</h1><form id="add"><label for="url">Feed URL</label><input id="url" type="url" placeholder="https://example.com/feed" required><button>Add subscription</button></form><p id="status" role="status"></p><section id="feeds"></section></main>
+<template id="row"><details><summary><span></span><small></small></summary><form><label><input name="paused" type="checkbox"> Pause delivery</label><label>Check for delivery every (minutes)<input name="minutes" type="number" min="1" max="1440" required></label><label>Latest items per check (0 for all)<input name="maximum" type="number" min="0" max="100" required></label><label>Only deliver items containing<input name="keyword" maxlength="120" placeholder="Any keyword"></label><button>Save changes</button><button type="button" class="remove">Remove</button></form></details></template>
+<script>
+const app=window.Telegram?.WebApp, statusLine=document.querySelector('#status'), feeds=document.querySelector('#feeds');
+app?.ready();
+async function api(method,body){
+ const res=await fetch('/api/subscriptions',{method,headers:{'X-Telegram-Init-Data':app?.initData||'','Content-Type':'application/json'},body:body&&JSON.stringify(body)});
+ if(!res.ok)throw Error(await res.text());
+ if(method==='GET')return res.json();
+}
+async function refresh(note=''){
+ const data=await api('GET');feeds.replaceChildren();
+ for(const [URL,s] of Object.entries(data)){
+ const card=document.querySelector('#row').content.cloneNode(true),form=card.querySelector('form'),el=form.elements;
+ card.querySelector('span').textContent=new window.URL(URL).hostname;
+ card.querySelector('small').textContent=URL+(s.Paused?' · Paused':'');
+ el.paused.checked=s.Paused;el.minutes.value=s.Minutes;el.maximum.value=s.MaxItems;el.keyword.value=s.Keyword;
+ form.onsubmit=e=>{e.preventDefault();change('PUT',{URL,Settings:{Paused:el.paused.checked,Minutes:+el.minutes.value,MaxItems:+el.maximum.value,Keyword:el.keyword.value}},'Settings saved.')};
+ form.querySelector('.remove').onclick=()=>{if(confirm('Remove '+URL+'?'))change('DELETE',{URL},'Subscription removed.')};
+ feeds.append(card);
+ }
+ statusLine.textContent=note||(!feeds.children.length?'No subscriptions yet.':'');
+}
+async function change(method,data,note){try{await api(method,data);if(method==='POST')document.querySelector('#add').reset();await refresh(note)}catch(e){statusLine.textContent=e.message}}
+document.querySelector('#add').onsubmit=e=>{e.preventDefault();change('POST',{URL:document.querySelector('#url').value},'Subscription added.')};
+refresh().catch(e=>statusLine.textContent=e.message);
+</script></html>
