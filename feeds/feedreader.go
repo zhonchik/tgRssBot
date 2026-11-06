@@ -44,7 +44,7 @@ func (reader *FeedReader) Run(ch chan<- types.Message) {
 			}
 			for id := range reader.Options.Chats {
 				s := reader.Options.ForChat(id)
-				if s.Paused || time.Since(last[id]) < time.Duration(s.Minutes)*time.Minute {
+				if time.Since(last[id]) < time.Duration(s.Minutes)*time.Minute {
 					continue
 				}
 				last[id] = time.Now()
@@ -55,6 +55,7 @@ func (reader *FeedReader) Run(ch chan<- types.Message) {
 						continue
 					}
 					m.ChatID = id
+					m.FeedURL = reader.Options.FeedUrl
 					batch = append(batch, m)
 				}
 				if s.MaxItems > 0 && len(batch) > s.MaxItems {
