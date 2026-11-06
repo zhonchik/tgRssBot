@@ -20,6 +20,9 @@ type (
 		storage      *storage.Storage
 		chats        map[int64]*types.Chat
 		feeds        map[string]*feeds.FeedReader
+		wake         chan struct{}
+		done         chan struct{}
+		workers      sync.WaitGroup
 		messageQueue chan types.Message
 	}
 )
@@ -35,7 +38,7 @@ func NewAggregatorService(
 		storage:      st,
 		chats:        make(map[int64]*types.Chat),
 		feeds:        make(map[string]*feeds.FeedReader),
-		messageQueue: messageQueue,
+		messageQueue: messageQueue, wake: make(chan struct{}, 1), done: make(chan struct{}),
 	}
 
 	feedList, err := st.GetFeeds()
@@ -55,13 +58,18 @@ func NewAggregatorService(
 		log.Warnf("Failed to read chats: %s", err)
 	}
 
+	as.workers.Add(2)
 	go as.processMessages()
+	go as.deliver()
+	as.signalDelivery()
 
 	return as, nil
 }
 
 func (as *AggregatorService) Close() error {
 	log.Info("Closing service")
+	close(as.done)
+	as.workers.Wait()
 	return as.storage.Close()
 }
 
@@ -151,7 +159,7 @@ func (as *AggregatorService) TryUnsubscribe(chatID int64, feedUrl string) error 
 	old := reader.Options.ForChat(chatID)
 	delete(reader.Options.Settings, chatID)
 	delete(reader.Options.Chats, chatID)
-	err = as.storage.SaveFeed(reader.Options)
+	err = as.storage.RemoveSubscription(reader.Options, chatID)
 	if err != nil {
 		reader.Options.Chats[chatID] = true
 		if reader.Options.Settings == nil {
@@ -211,17 +219,84 @@ func (as *AggregatorService) addReader(feedOptions *types.FeedOptions) {
 }
 
 func (as *AggregatorService) processMessages() {
-	for message := range as.messageQueue {
-		if as.storage.IsProcessed(message) {
-			continue
-		}
-		log.Infof("New article %s", message.URL)
-		message = feeds.EnrichArticle(message)
-		err := as.sendMessage(message)
-		if err == nil {
-			_ = as.storage.MarkAsProcessed(message)
+	defer as.workers.Done()
+	for {
+		select {
+		case <-as.done:
+			return
+		case m := <-as.messageQueue:
+			as.mu.Lock()
+			r := as.feeds[m.FeedURL]
+			if r != nil && r.Options.Chats[m.ChatID] {
+				if err := as.storage.Enqueue(m); err != nil {
+					log.Warn(err)
+				} else if !r.Options.ForChat(m.ChatID).Paused {
+					as.signalDelivery()
+				}
+			}
+			as.mu.Unlock()
 		}
 	}
+}
+
+func (as *AggregatorService) signalDelivery() {
+	select {
+	case as.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (as *AggregatorService) deliver() {
+	defer as.workers.Done()
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-as.done:
+			return
+		case <-ticker.C:
+		case <-as.wake:
+		}
+		subs, err := as.storage.Queues()
+		if err != nil {
+			log.Warn(err)
+			continue
+		}
+		for _, sub := range subs {
+			for {
+				select {
+				case <-as.done:
+					return
+				default:
+				}
+				more, err := as.deliverOne(sub)
+				if err != nil {
+					log.Warn(err)
+				}
+				if err != nil || !more {
+					break
+				}
+			}
+		}
+	}
+}
+
+func (as *AggregatorService) deliverOne(sub storage.Subscription) (bool, error) {
+	// Serialize the final pause check and send with subscription changes.
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	r := as.feeds[sub.Feed]
+	if r == nil || !r.Options.Chats[sub.Chat] || r.Options.ForChat(sub.Chat).Paused {
+		return false, nil
+	}
+	m, seq, err := as.storage.First(sub)
+	if err != nil || seq == 0 {
+		return false, err
+	}
+	if err := as.sendMessage(feeds.EnrichArticle(m)); err != nil {
+		return false, err
+	}
+	return true, as.storage.Acknowledge(sub, seq)
 }
 
 func (as *AggregatorService) Subscriptions(id int64) map[string]types.SubscriptionSettings {
@@ -238,6 +313,26 @@ func (as *AggregatorService) Subscriptions(id int64) map[string]types.Subscripti
 func (as *AggregatorService) Update(id int64, url string, s types.SubscriptionSettings) error {
 	as.mu.Lock()
 	defer as.mu.Unlock()
+	return as.updateLocked(id, url, s)
+}
+
+func (as *AggregatorService) SetPaused(id int64, url string, paused bool) error {
+	url, err := purell.NormalizeURLString(url, purell.FlagsUsuallySafeGreedy)
+	if err != nil {
+		return errors.New("wrong url")
+	}
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	r := as.feeds[url]
+	if r == nil || !r.Options.Chats[id] {
+		return errors.New("subscription missing")
+	}
+	s := r.Options.ForChat(id)
+	s.Paused = paused
+	return as.updateLocked(id, url, s)
+}
+
+func (as *AggregatorService) updateLocked(id int64, url string, s types.SubscriptionSettings) error {
 	r := as.feeds[url]
 	if r == nil || !r.Options.Chats[id] {
 		return errors.New("subscription missing")
@@ -255,6 +350,9 @@ func (as *AggregatorService) Update(id int64, url string, s types.SubscriptionSe
 	if err := as.storage.SaveFeed(r.Options); err != nil {
 		r.Options.Settings[id] = old
 		return err
+	}
+	if !s.Paused {
+		as.signalDelivery()
 	}
 	return nil
 }

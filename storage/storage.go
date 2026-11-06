@@ -39,7 +39,8 @@ func NewStorage(options Options) (*Storage, error) {
 		if err != nil {
 			return fmt.Errorf("create bucket: %s", err)
 		}
-		return nil
+		_, err = tx.CreateBucketIfNotExists(queueBucket)
+		return err
 	})
 	if err != nil {
 		return nil, err
@@ -113,7 +114,27 @@ func (storage *Storage) GetFeeds() ([]*types.FeedOptions, error) {
 }
 
 func (storage *Storage) SaveFeed(feed *types.FeedOptions) error {
+	return storage.saveFeed(feed, nil)
+}
+
+func (storage *Storage) RemoveSubscription(feed *types.FeedOptions, id int64) error {
+	return storage.saveFeed(feed, &Subscription{feed.FeedUrl, id})
+}
+
+func (storage *Storage) saveFeed(feed *types.FeedOptions, removed *Subscription) error {
 	err := storage.db.Update(func(tx *bolt.Tx) error {
+		if removed != nil {
+			key, err := json.Marshal(removed)
+			if err != nil {
+				return err
+			}
+			root := tx.Bucket(queueBucket)
+			if root.Bucket(key) != nil {
+				if err := root.DeleteBucket(key); err != nil {
+					return err
+				}
+			}
+		}
 		b := tx.Bucket([]byte("Feeds"))
 		key := []byte(feed.FeedUrl)
 		value, err := json.Marshal(feed)

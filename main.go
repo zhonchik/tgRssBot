@@ -75,6 +75,9 @@ func main() {
 	bc.AddHandler(botcontroller.CommandStart{AggregatorService: as, BotController: bc})
 	bc.AddHandler(botcontroller.CommandSubscribe{AggregatorService: as, BotController: bc})
 	bc.AddHandler(botcontroller.CommandUnsubscribe{AggregatorService: as, BotController: bc})
+	for _, paused := range []bool{true, false} {
+		bc.AddHandler(botcontroller.CommandPause{AggregatorService: as, BotController: bc, Paused: paused})
+	}
 	bc.AddHandler(botcontroller.CommandList{AggregatorService: as, BotController: bc})
 
 	if cfg.Bot.SettingsURL != "" {
