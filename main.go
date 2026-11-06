@@ -92,8 +92,10 @@ func main() {
 			}
 		}()
 		defer server.Close()
-		bc.AddHandler(botcontroller.CommandSettings{BotController: bc, URL: cfg.Bot.SettingsURL})
+
 	}
+	settingsCommand := &botcontroller.CommandSettings{BotController: bc, AggregatorService: as, URL: cfg.Bot.SettingsURL}
+	settingsCommand.Register()
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt)
 	<-quit

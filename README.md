@@ -112,3 +112,15 @@ Existing subscriptions default to unpaused, every minute, all items, and no
 keyword filter. Delivery checks and filters are per subscription. Feed downloads
 remain shared. The item limit selects the latest matching entries before
 deduplication.
+
+
+### In-chat settings
+
+Send `/settings` in a private chat with the bot to manage subscriptions without
+configuring a web server. Select a feed to pause or resume delivery, change its
+interval (1–1440 minutes), set its item limit (0–100, with 0 meaning all), or edit
+or clear its keyword filter (up to 120 characters). Numeric values and keywords
+are entered in reply to the menu prompt; `/cancel` returns to the menu.
+You can also add feeds and remove subscriptions with confirmation. Changes use
+the same persisted settings as the web interface. When `settings_url` is set,
+the menu also includes a link to that interface.
