@@ -7,16 +7,21 @@ import (
 	"github.com/lestrrat-go/file-rotatelogs"
 	log "github.com/sirupsen/logrus"
 	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"tgRssBot/aggregatorservice"
 	"tgRssBot/botcontroller"
+	"tgRssBot/settings"
 	"tgRssBot/storage"
+	"time"
 )
 
 type (
 	BotConfig struct {
-		Token string `config:"token,required"`
+		SettingsURL    string `config:"settings_url"`
+		SettingsListen string `config:"settings_listen"`
+		Token          string `config:"token,required"`
 	}
 
 	Config struct {
@@ -70,8 +75,25 @@ func main() {
 	bc.AddHandler(botcontroller.CommandStart{AggregatorService: as, BotController: bc})
 	bc.AddHandler(botcontroller.CommandSubscribe{AggregatorService: as, BotController: bc})
 	bc.AddHandler(botcontroller.CommandUnsubscribe{AggregatorService: as, BotController: bc})
+	for _, paused := range []bool{true, false} {
+		bc.AddHandler(botcontroller.CommandPause{AggregatorService: as, BotController: bc, Paused: paused})
+	}
 	bc.AddHandler(botcontroller.CommandList{AggregatorService: as, BotController: bc})
 
+	if cfg.Bot.SettingsURL != "" {
+		addr := cfg.Bot.SettingsListen
+		if addr == "" {
+			addr = "127.0.0.1:8080"
+		}
+		server := &http.Server{Addr: addr, Handler: settings.Handler(as, cfg.Bot.Token), ReadHeaderTimeout: 5 * time.Second}
+		go func() {
+			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Errorf("Settings server: %s", err)
+			}
+		}()
+		defer server.Close()
+		bc.AddHandler(botcontroller.CommandSettings{BotController: bc, URL: cfg.Bot.SettingsURL})
+	}
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt)
 	<-quit

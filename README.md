@@ -98,3 +98,17 @@ individual publishers do not require configured selectors.
 Existing processed-article keys are preserved, so presentation changes do not
 resend old news. Delivery is at least once: an ambiguous transport failure can cause a message
 to repeat on the next feed poll.
+
+## Subscription settings in Telegram
+
+Set `bot.settings_url` in config.yaml to the public HTTPS root of the settings
+site. Forward that site's requests to `127.0.0.1:8080` using your HTTPS reverse
+proxy. Override the local address with `bot.settings_listen` if necessary.
+Restart the bot and send /settings in its private chat. The app validates
+Telegram's signed launch data and scopes every operation to the launching user.
+Launches expire after one hour; reopen the app to continue.
+
+Existing subscriptions default to unpaused, every minute, all items, and no
+keyword filter. Delivery checks and filters are per subscription. Feed downloads
+remain shared. The item limit selects the latest matching entries before
+deduplication.
