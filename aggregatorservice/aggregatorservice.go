@@ -291,18 +291,30 @@ func (as *AggregatorService) deliver() {
 }
 
 func (as *AggregatorService) deliverOne(sub storage.Subscription) (bool, error) {
-	// Serialize the final pause check and send with subscription changes.
+	// Read the pending item without blocking pause during article fetching.
 	as.mu.Lock()
-	defer as.mu.Unlock()
 	r := as.feeds[sub.Feed]
 	if r == nil || !r.Options.Chats[sub.Chat] || r.Options.ForChat(sub.Chat).Paused {
+		as.mu.Unlock()
 		return false, nil
 	}
 	m, seq, err := as.storage.First(sub)
+	as.mu.Unlock()
 	if err != nil || seq == 0 {
 		return false, err
 	}
-	if err := as.sendMessage(feeds.EnrichArticle(m)); err != nil {
+	enriched := feeds.EnrichArticle(m)
+	// Serialize only the final check and send with subscription changes.
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	if as.feeds[sub.Feed] != r || !r.Options.Chats[sub.Chat] || r.Options.ForChat(sub.Chat).Paused {
+		return false, nil
+	}
+	current, currentSeq, err := as.storage.First(sub)
+	if err != nil || currentSeq != seq || current != m {
+		return false, err
+	}
+	if err := as.sendMessage(enriched); err != nil {
 		return false, err
 	}
 	return true, as.storage.Acknowledge(sub, seq)

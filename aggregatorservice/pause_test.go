@@ -2,8 +2,13 @@ package aggregatorservice
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"tgRssBot/feeds"
 	"tgRssBot/storage"
@@ -80,5 +85,63 @@ func TestPausedQueueSurvivesRestartAndSendFailure(t *testing.T) {
 	}
 	if sent, err := s.deliverOne(sub); sent || err != nil {
 		t.Fatal(sent, err)
+	}
+}
+
+func TestPauseDuringArticleFetch(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		w.Write([]byte("<html><body><p>Article body</p></body></html>"))
+	}))
+	defer server.Close()
+	defer unblock()
+	db, err := storage.NewStorage(storage.Options{Path: filepath.Join(t.TempDir(), "queue.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	const feed = "https://example.com/rss"
+	sub := storage.Subscription{Feed: feed, Chat: 1}
+	var sent atomic.Bool
+	s := &AggregatorService{storage: db, sendMessage: func(types.Message) error { sent.Store(true); return nil }, feeds: map[string]*feeds.FeedReader{
+		feed: feeds.NewFeedReader(&types.FeedOptions{FeedUrl: feed, Chats: map[int64]bool{1: true}}),
+	}}
+	if err := db.Enqueue(types.Message{ChatID: 1, FeedURL: feed, URL: server.URL}); err != nil {
+		t.Fatal(err)
+	}
+	delivered := make(chan error, 1)
+	go func() { _, err := s.deliverOne(sub); delivered <- err }()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("article fetch did not start")
+	}
+	paused := make(chan error, 1)
+	go func() { paused <- s.SetPaused(1, feed, true) }()
+	select {
+	case err := <-paused:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		unblock()
+		<-delivered
+		<-paused
+		t.Fatal("pause blocked on article fetch")
+	}
+	unblock()
+	if err := <-delivered; err != nil {
+		t.Fatal(err)
+	}
+	if sent.Load() {
+		t.Fatal("article sent after pause")
+	}
+	if count, err := db.QueueCount(sub); err != nil || count != 1 {
+		t.Fatalf("queue count = %d, error = %v", count, err)
 	}
 }
