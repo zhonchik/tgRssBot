@@ -100,9 +100,21 @@ func (reader *FeedReader) getFeedItems() ([]*gofeed.Item, error) {
 	}
 
 	items := feed.Items[:]
-	sort.Slice(items, func(i, j int) bool {
-		return items[i].Published < items[j].Published
+	sort.SliceStable(items, func(i, j int) bool {
+		return publicationTime(items[i]).Before(publicationTime(items[j]))
 	})
 
 	return items, nil
+}
+
+// Use parsed instants, including timezone offsets, before applying item limits.
+// Undated items sort first, preserving their relative order.
+func publicationTime(item *gofeed.Item) time.Time {
+	if item.PublishedParsed != nil {
+		return *item.PublishedParsed
+	}
+	if item.UpdatedParsed != nil {
+		return *item.UpdatedParsed
+	}
+	return time.Time{}
 }
