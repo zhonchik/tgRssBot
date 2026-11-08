@@ -389,3 +389,17 @@ func (as *AggregatorService) notifyCalendarPauses() {
 		}
 	}
 }
+
+// CalendarLinks returns only calendars owned by this chat.
+func (as *AggregatorService) CalendarLinks(id int64) []string {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	var links []string
+	if chat := as.chats[id]; chat != nil {
+		for link := range chat.Calendars {
+			links = append(links, link)
+		}
+	}
+	sort.Strings(links)
+	return links
+}

@@ -21,7 +21,7 @@ type CommandSettings struct {
 }
 
 func (c *CommandSettings) GetCommand() string     { return "/settings" }
-func (c *CommandSettings) GetDescription() string { return "Manage feed settings" }
+func (c *CommandSettings) GetDescription() string { return "Manage subscriptions and calendars" }
 func settingsKey(url string) string               { return fmt.Sprintf("%x", sha256.Sum256([]byte(url)))[:16] }
 func (c *CommandSettings) private(ctx tb.Context) bool {
 	return ctx.Message() != nil && ctx.Message().Chat != nil && ctx.Sender() != nil && ctx.Sender().Recipient() == strconv.FormatInt(ctx.Message().Chat.ID, 10)
@@ -65,6 +65,7 @@ func (c *CommandSettings) menu(ctx tb.Context, key string) error {
 			text = "No subscriptions yet. Add a feed below."
 		}
 		rows = append(rows, menu.Row(menu.Data("Add subscription", "settings", "add")))
+		rows = append(rows, menu.Row(menu.Data("Calendars", "settings", "calendars")))
 		if c.URL != "" {
 			rows = append(rows, menu.Row(menu.URL("Web settings", c.URL)))
 		}
@@ -78,6 +79,11 @@ func (c *CommandSettings) menu(ctx tb.Context, key string) error {
 			text = fmt.Sprintf("%s\nPaused: %t\nInterval: %d minutes\nItems per check: %d (0 = all)\nKeyword: %s", u, s.Paused || s.PauseReason != "", s.Minutes, s.MaxItems, s.Keyword)
 			if s.PauseReason != "" {
 				text += "\nReason: " + s.PauseReason
+			}
+			text += "\nCalendar: " + s.Calendar
+			rows = append(rows, menu.Row(menu.Data("Link / change calendar", "settings", "calpick:"+key)))
+			if s.Calendar != "" {
+				rows = append(rows, menu.Row(menu.Data("Unlink calendar", "settings", "calunlink:"+key)), menu.Row(menu.Data("Advance to next event", "settings", "calnext:"+key)))
 			}
 			label := "Pause delivery"
 			if s.Paused || s.PauseReason != "" {
@@ -109,6 +115,9 @@ func (c *CommandSettings) callback(ctx tb.Context) error {
 		return err
 	}
 	c.clear(ctx.Message().Chat.ID)
+	if handled, err := c.calendarCallback(ctx, ctx.Callback().Data); handled {
+		return err
+	}
 	parts := strings.SplitN(ctx.Callback().Data, ":", 2)
 	action := parts[0]
 	if action == "back" {
@@ -175,6 +184,13 @@ func (c *CommandSettings) input(ctx tb.Context) error {
 		return nil
 	}
 	value := strings.TrimSpace(ctx.Message().Text)
+	if p.Field == "calendar-add" {
+		if _, err := c.AggregatorService.CalendarCommand(id, []string{"add", value}); err != nil {
+			return ctx.Send(err.Error() + " Try again or /cancel.")
+		}
+		c.clear(id)
+		return c.calendarMenu(ctx, "", "")
+	}
 	if p.Field == "add" {
 		if err := c.AggregatorService.TrySubscribe(id, value); err != nil {
 			return ctx.Send(err.Error() + " Try again or /cancel.")

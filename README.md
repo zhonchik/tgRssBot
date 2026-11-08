@@ -168,3 +168,10 @@ The check runs at least once a minute, even when there are no new articles.
 Successful notifications are recorded across restarts; failed sends are retried
 (ambiguous delivery failures can produce duplicates). `/list`, the in-chat
 settings menu and web settings show the pause reason, including manual pauses.
+
+You can also manage calendars entirely through `/settings`: choose **Calendars**
+to add, inspect or delete a calendar (with confirmation), or resume/advance all
+linked subscriptions. Open a subscription to **Link / change calendar**,
+**Unlink calendar**, or **Advance to next event**. The existing **Resume delivery**
+button resumes that subscription. Adding a calendar prompts for its subscription
+URL; `/cancel` returns to the main settings menu.
