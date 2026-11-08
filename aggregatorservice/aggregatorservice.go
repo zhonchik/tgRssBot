@@ -188,7 +188,7 @@ func (as *AggregatorService) GetFeedList(chatID int64) (string, error) {
 				if err != nil {
 					return "", err
 				}
-				status = fmt.Sprintf("paused, %d queued", count)
+				status = fmt.Sprintf("paused, %d queued; reason: %s", count, as.pauseReasonLocked(chatID, reader.Options.ForChat(chatID)))
 			}
 			subscribed = append(subscribed, feedUrl+" ("+status+")")
 		} else {
@@ -267,6 +267,7 @@ func (as *AggregatorService) deliver() {
 		case <-ticker.C:
 		case <-as.wake:
 		}
+		as.notifyCalendarPauses()
 		subs, err := as.storage.Queues()
 		if err != nil {
 			log.Warn(err)
@@ -333,7 +334,9 @@ func (as *AggregatorService) Subscriptions(id int64) map[string]types.Subscripti
 	result := make(map[string]types.SubscriptionSettings)
 	for url, r := range as.feeds {
 		if r.Options.Chats[id] {
-			result[url] = r.Options.ForChat(id)
+			s := r.Options.ForChat(id)
+			s.PauseReason = as.pauseReasonLocked(id, s)
+			result[url] = s
 		}
 	}
 	return result
@@ -346,6 +349,7 @@ func (as *AggregatorService) Update(id int64, url string, s types.SubscriptionSe
 		previous := old.Options.ForChat(id)
 		s.Calendar = previous.Calendar
 		s.CalendarAfter = previous.CalendarAfter
+		s.CalendarNotified = previous.CalendarNotified
 		if previous.Paused && !s.Paused {
 			s.CalendarAfter = time.Now().UTC()
 		}
@@ -386,6 +390,7 @@ func (as *AggregatorService) updateLocked(id int64, url string, s types.Subscrip
 		r.Options.Settings = make(map[int64]types.SubscriptionSettings)
 	}
 	old := r.Options.ForChat(id)
+	s.PauseReason = "" // Derived status is never accepted from clients or persisted.
 	r.Options.Settings[id] = s
 	if err := as.storage.SaveFeed(r.Options); err != nil {
 		r.Options.Settings[id] = old

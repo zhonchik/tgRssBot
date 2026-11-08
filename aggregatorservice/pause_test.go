@@ -40,7 +40,7 @@ func TestPausedQueueSurvivesRestartAndSendFailure(t *testing.T) {
 			t.Fatalf("unexpected subscription list: %q, %v", got, err)
 		}
 	}
-	checkList("paused, 0 queued")
+	checkList("paused, 0 queued; reason: manual pause")
 	first := types.Message{ReceivedAt: time.Now().UTC(), ChatID: 1, FeedURL: feed, URL: "a", Title: "One", Text: "Article", ImageURL: "photo"}
 	second := first
 	second.URL = "b"
@@ -52,7 +52,7 @@ func TestPausedQueueSurvivesRestartAndSendFailure(t *testing.T) {
 	if sent, err := s.deliverOne(sub); sent || err != nil {
 		t.Fatal(sent, err)
 	}
-	checkList("paused, 2 queued")
+	checkList("paused, 2 queued; reason: manual pause")
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestPausedQueueSurvivesRestartAndSendFailure(t *testing.T) {
 		t.Fatal(saved, err)
 	}
 	s.feeds[feed] = feeds.NewFeedReader(saved[0])
-	checkList("paused, 2 queued")
+	checkList("paused, 2 queued; reason: manual pause")
 	if err := s.SetPaused(1, feed, false); err != nil {
 		t.Fatal(err)
 	}

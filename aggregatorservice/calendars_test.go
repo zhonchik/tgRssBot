@@ -1,6 +1,7 @@
 package aggregatorservice
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -98,5 +99,72 @@ func TestCalendarControlsAndPersistence(t *testing.T) {
 		if r.Options.ForChat(1).Calendar != "" {
 			t.Fatal("dangling link")
 		}
+	}
+}
+
+func TestPauseNotificationRetryAndRestart(t *testing.T) {
+	db, err := storage.NewStorage(storage.Options{Path: filepath.Join(t.TempDir(), "notifications.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	const feed = "https://example.com/rss"
+	const link = "https://example.com/calendar.ics"
+	boundary := time.Now().UTC().Add(-time.Minute)
+	c := types.Calendar{Starts: []time.Time{boundary}, Summaries: map[string]string{boundary.Format(time.RFC3339Nano): "Grand Prix"}}
+	options := &types.FeedOptions{FeedUrl: feed, Chats: map[int64]bool{1: true, 2: true}, Settings: map[int64]types.SubscriptionSettings{1: {Calendar: link, CalendarAfter: boundary.Add(-time.Hour), Minutes: 1}}}
+	as := &AggregatorService{storage: db, chats: map[int64]*types.Chat{1: {Calendars: map[string]types.Calendar{link: c}}}, feeds: map[string]*feeds.FeedReader{feed: feeds.NewFeedReader(options)}, wake: make(chan struct{}, 1)}
+	attempts := 0
+	as.sendMessage = func(m types.Message) error {
+		attempts++
+		if attempts == 1 {
+			return fmt.Errorf("temporary failure")
+		}
+		if m.ChatID != 1 || !strings.Contains(m.Text, "Grand Prix") || !strings.Contains(m.Text, link) {
+			t.Fatalf("wrong notification: %+v", m)
+		}
+		return nil
+	}
+	as.notifyCalendarPauses()
+	if !options.ForChat(1).CalendarNotified.IsZero() {
+		t.Fatal("marked failed notification sent")
+	}
+	as.notifyCalendarPauses()
+	as.notifyCalendarPauses()
+	if attempts != 2 {
+		t.Fatalf("got %d attempts", attempts)
+	}
+	saved, err := db.GetFeeds()
+	if err != nil {
+		t.Fatal(err)
+	}
+	as.feeds[feed] = feeds.NewFeedReader(saved[0])
+	as.notifyCalendarPauses()
+	if attempts != 2 {
+		t.Fatal("notification repeated after reload")
+	}
+	reason := as.Subscriptions(1)[feed].PauseReason
+	if !strings.Contains(reason, "Grand Prix") || !strings.Contains(reason, "UTC") {
+		t.Fatal(reason)
+	}
+	list, err := as.GetFeedList(1)
+	if err != nil || !strings.Contains(list, "Grand Prix") {
+		t.Fatal(list, err)
+	}
+	if err := as.SetPaused(1, feed, false); err != nil {
+		t.Fatal(err)
+	}
+	if as.Subscriptions(1)[feed].PauseReason != "" {
+		t.Fatal("resume kept pause reason")
+	}
+	if err := as.SetPaused(1, feed, true); err != nil {
+		t.Fatal(err)
+	}
+	if as.Subscriptions(1)[feed].PauseReason != "manual pause" {
+		t.Fatal("manual reason missing")
+	}
+	as.notifyCalendarPauses()
+	if attempts != 2 {
+		t.Fatal("manual pause notified as calendar")
 	}
 }

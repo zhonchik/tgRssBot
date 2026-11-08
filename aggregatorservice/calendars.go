@@ -31,7 +31,7 @@ func calendarURL(raw string) (string, error) {
 
 func parseCalendar(r io.Reader) (types.Calendar, error) {
 	c, err := ical.ParseCalendar(r)
-	result := types.Calendar{Updated: time.Now().UTC()}
+	result := types.Calendar{Updated: time.Now().UTC(), Summaries: make(map[string]string)}
 	if err != nil {
 		return result, err
 	}
@@ -48,6 +48,9 @@ func parseCalendar(r io.Reader) (types.Calendar, error) {
 			return result, fmt.Errorf("invalid event start: %w", err)
 		}
 		result.Starts = append(result.Starts, start.UTC())
+		if summary := e.GetProperty(ical.ComponentPropertySummary); summary != nil {
+			result.Summaries[start.UTC().Format(time.RFC3339Nano)] = summary.Value
+		}
 	}
 	sort.Slice(result.Starts, func(i, j int) bool { return result.Starts[i].Before(result.Starts[j]) })
 	return result, nil
@@ -182,6 +185,7 @@ func (as *AggregatorService) CalendarCommand(id int64, args []string) (string, e
 				return "", errors.New("add the calendar first")
 			}
 			s.Calendar = link
+			s.CalendarNotified = time.Time{}
 			s.CalendarAfter = time.Now().UTC()
 		case "unlink":
 			s.Calendar = ""
@@ -314,6 +318,74 @@ func (as *AggregatorService) refreshCalendars() {
 		case <-as.done:
 			return
 		case <-ticker.C:
+		}
+	}
+}
+
+// pauseReasonLocked reports the effective state without turning calendar pauses
+// into manual pauses. The caller holds as.mu.
+func (as *AggregatorService) pauseReasonLocked(id int64, s types.SubscriptionSettings) string {
+	if s.Paused {
+		return "manual pause"
+	}
+	if s.Calendar == "" {
+		return ""
+	}
+	chat := as.chats[id]
+	if chat == nil {
+		return "calendar unavailable: " + s.Calendar
+	}
+	c, ok := chat.Calendars[s.Calendar]
+	if !ok {
+		return "calendar unavailable: " + s.Calendar
+	}
+	boundary := nextStart(c, s.CalendarAfter)
+	if boundary.IsZero() || time.Now().Before(boundary) {
+		return ""
+	}
+	summary := c.Summaries[boundary.UTC().Format(time.RFC3339Nano)]
+	if summary == "" {
+		summary = "calendar event"
+	}
+	return fmt.Sprintf("%s started at %s (UTC); calendar: %s", summary, boundary.UTC().Format("2006-01-02 15:04:05"), s.Calendar)
+}
+
+// Called on startup, delivery wakeups and the minute tick, even with no queued
+// articles. Successful notifications are recorded so restart does not repeat them.
+// Ambiguous transport or persistence failures may cause a retry.
+func (as *AggregatorService) notifyCalendarPauses() {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	for feed, r := range as.feeds {
+		for id, subscribed := range r.Options.Chats {
+			if !subscribed {
+				continue
+			}
+			s := r.Options.ForChat(id)
+			if s.Paused || s.Calendar == "" {
+				continue
+			}
+			chat := as.chats[id]
+			if chat == nil {
+				continue
+			}
+			c, ok := chat.Calendars[s.Calendar]
+			if !ok {
+				continue
+			}
+			boundary := nextStart(c, s.CalendarAfter)
+			if boundary.IsZero() || time.Now().Before(boundary) || s.CalendarNotified.Equal(boundary) {
+				continue
+			}
+			reason := as.pauseReasonLocked(id, s)
+			if err := as.sendMessage(types.Message{ChatID: id, Title: "Subscription paused", Text: feed + "\nReason: " + reason + "\nUse /resume " + feed + " to resume or /calendar next " + feed + " to advance."}); err != nil {
+				log.Warn("Pause notification failed: ", err)
+				continue
+			}
+			s.CalendarNotified = boundary
+			if err := as.updateLocked(id, feed, s); err != nil {
+				log.Warn("Pause notification status could not be saved: ", err)
+			}
 		}
 	}
 }

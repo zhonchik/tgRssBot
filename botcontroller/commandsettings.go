@@ -75,9 +75,12 @@ func (c *CommandSettings) menu(ctx tb.Context, key string) error {
 				continue
 			}
 			found = true
-			text = fmt.Sprintf("%s\nPaused: %t\nInterval: %d minutes\nItems per check: %d (0 = all)\nKeyword: %s", u, s.Paused, s.Minutes, s.MaxItems, s.Keyword)
+			text = fmt.Sprintf("%s\nPaused: %t\nInterval: %d minutes\nItems per check: %d (0 = all)\nKeyword: %s", u, s.Paused || s.PauseReason != "", s.Minutes, s.MaxItems, s.Keyword)
+			if s.PauseReason != "" {
+				text += "\nReason: " + s.PauseReason
+			}
 			label := "Pause delivery"
-			if s.Paused {
+			if s.Paused || s.PauseReason != "" {
 				label = "Resume delivery"
 			}
 			for _, v := range []struct{ label, action string }{{label, "pause"}, {"Change interval", "minutes"}, {"Change item limit", "maximum"}, {"Change keyword", "keyword"}, {"Clear keyword", "clear"}, {"Remove subscription", "remove"}} {
@@ -129,7 +132,10 @@ func (c *CommandSettings) callback(ctx tb.Context) error {
 		case "feed":
 			return c.menu(ctx, key)
 		case "pause":
-			s.Paused = !s.Paused
+			if err := c.AggregatorService.SetPaused(ctx.Message().Chat.ID, u, !(s.Paused || s.PauseReason != "")); err != nil {
+				return ctx.Send(err.Error())
+			}
+			return c.menu(ctx, key)
 		case "clear":
 			s.Keyword = ""
 		case "remove":

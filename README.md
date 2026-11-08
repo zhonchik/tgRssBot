@@ -161,3 +161,10 @@ all-day events are supported (floating times use the server timezone). Recurrenc
 rules are rejected: use feeds listing each event explicitly, like the F1 feed.
 Article boundaries use the time the bot received each article, not its publication
 time. Legacy queue items without timestamps stay held at a boundary until resume.
+
+When a calendar event triggers a pause, the bot sends a **Subscription paused**
+notification naming the feed, event, calendar URL and event start time in UTC.
+The check runs at least once a minute, even when there are no new articles.
+Successful notifications are recorded across restarts; failed sends are retried
+(ambiguous delivery failures can produce duplicates). `/list`, the in-chat
+settings menu and web settings show the pause reason, including manual pauses.

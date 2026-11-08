@@ -10,12 +10,14 @@ type FeedOptions struct {
 }
 
 type SubscriptionSettings struct {
-	Calendar      string
-	CalendarAfter time.Time
-	Paused        bool
-	Minutes       int
-	MaxItems      int
-	Keyword       string
+	Calendar         string
+	CalendarAfter    time.Time
+	CalendarNotified time.Time
+	PauseReason      string
+	Paused           bool
+	Minutes          int
+	MaxItems         int
+	Keyword          string
 }
 
 func (f *FeedOptions) ForChat(id int64) SubscriptionSettings {

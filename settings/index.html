@@ -17,7 +17,7 @@ async function refresh(note=''){
  for(const [URL,s] of Object.entries(data)){
  const card=document.querySelector('#row').content.cloneNode(true),form=card.querySelector('form'),el=form.elements;
  card.querySelector('span').textContent=new window.URL(URL).hostname;
- card.querySelector('small').textContent=URL+(s.Paused?' · Paused':'');
+ card.querySelector('small').textContent=URL+(s.PauseReason?' · Paused: '+s.PauseReason:(s.Paused?' · Paused manually':''));
  el.paused.checked=s.Paused;el.minutes.value=s.Minutes;el.maximum.value=s.MaxItems;el.keyword.value=s.Keyword;
  form.onsubmit=e=>{e.preventDefault();change('PUT',{URL,Settings:{Paused:el.paused.checked,Minutes:+el.minutes.value,MaxItems:+el.maximum.value,Keyword:el.keyword.value}},'Settings saved.')};
  form.querySelector('.remove').onclick=()=>{if(confirm('Remove '+URL+'?'))change('DELETE',{URL},'Subscription removed.')};
