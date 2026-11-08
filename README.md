@@ -124,3 +124,40 @@ are entered in reply to the menu prompt; `/cancel` returns to the menu.
 You can also add feeds and remove subscriptions with confirmation. Changes use
 the same persisted settings as the web interface. When `settings_url` is set,
 the menu also includes a link to that interface.
+
+### Calendar pauses
+
+Add a public iCalendar (`.ics`) subscription URL. For example, the F1 Calendar
+project publishes https://f1.vidmar.net/calendar.ics (verified to contain the
+2026 schedule). This full feed includes practice, qualifying, races and testing;
+choose a race-only feed if you only want race boundaries.
+
+```
+/calendar add https://f1.vidmar.net/calendar.ics
+/calendar list
+/calendar link https://example.com/rss https://f1.vidmar.net/calendar.ics
+/calendar next https://example.com/rss
+/resume https://example.com/rss
+/calendar advance https://f1.vidmar.net/calendar.ics
+/calendar resume https://f1.vidmar.net/calendar.ics
+/calendar unlink https://example.com/rss
+/calendar delete https://f1.vidmar.net/calendar.ics
+```
+
+Calendars belong to the requesting user and can control many subscriptions.
+Linking arms the subscription for the next future event. Items received at or
+after that event's start are queued until you advance or resume. `next` advances
+one subscription by one event; `advance` does so for all subscriptions linked to
+the calendar. This releases items received before the following event starts,
+allowing you to catch up one session at a time. `resume` releases the entire
+backlog and arms the next future event. Manual `/pause` still takes precedence.
+At the last event, advancing releases all remaining items. With no future event,
+delivery continues until an hourly refresh supplies one.
+
+Calendars and progress survive restart. Feeds refresh at startup and every hour;
+failed downloads retain the last valid schedule. Deleting a calendar unlinks its
+subscriptions without deleting queued articles. UTC, timezone-qualified and
+all-day events are supported (floating times use the server timezone). Recurrence
+rules are rejected: use feeds listing each event explicitly, like the F1 feed.
+Article boundaries use the time the bot received each article, not its publication
+time. Legacy queue items without timestamps stay held at a boundary until resume.

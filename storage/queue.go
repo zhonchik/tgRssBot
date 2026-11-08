@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"encoding/json"
+	"time"
 
 	bolt "go.etcd.io/bbolt"
 	"tgRssBot/types"
@@ -20,6 +21,9 @@ var queueBucket = []byte("DeliveryQueues")
 // Enqueue records ownership of the article and its full payload atomically.
 // ProcessedMessages keeps its historical chat/URL key format.
 func (s *Storage) Enqueue(m types.Message) error {
+	if m.ReceivedAt.IsZero() {
+		m.ReceivedAt = time.Now().UTC()
+	}
 	sub, err := json.Marshal(Subscription{m.FeedURL, m.ChatID})
 	if err != nil {
 		return err

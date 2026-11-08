@@ -41,7 +41,7 @@ func TestPausedQueueSurvivesRestartAndSendFailure(t *testing.T) {
 		}
 	}
 	checkList("paused, 0 queued")
-	first := types.Message{ChatID: 1, FeedURL: feed, URL: "a", Title: "One", Text: "Article", ImageURL: "photo"}
+	first := types.Message{ReceivedAt: time.Now().UTC(), ChatID: 1, FeedURL: feed, URL: "a", Title: "One", Text: "Article", ImageURL: "photo"}
 	second := first
 	second.URL = "b"
 	for _, m := range []types.Message{first, second, first} {

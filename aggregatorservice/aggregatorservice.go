@@ -59,7 +59,8 @@ func NewAggregatorService(
 		log.Warnf("Failed to read chats: %s", err)
 	}
 
-	as.workers.Add(2)
+	as.workers.Add(3)
+	go as.refreshCalendars()
 	go as.processMessages()
 	go as.deliver()
 	as.signalDelivery()
@@ -182,7 +183,7 @@ func (as *AggregatorService) GetFeedList(chatID int64) (string, error) {
 	for feedUrl, reader := range as.feeds {
 		if reader.Options.Chats[chatID] {
 			status := "active"
-			if reader.Options.ForChat(chatID).Paused {
+			if reader.Options.ForChat(chatID).Paused || as.calendarBlocksLocked(storage.Subscription{Feed: feedUrl, Chat: chatID}, types.Message{}) {
 				count, err := as.storage.QueueCount(storage.Subscription{Feed: feedUrl, Chat: chatID})
 				if err != nil {
 					return "", err
@@ -303,11 +304,17 @@ func (as *AggregatorService) deliverOne(sub storage.Subscription) (bool, error) 
 	if err != nil || seq == 0 {
 		return false, err
 	}
+	if as.calendarBlocks(sub, m) {
+		return false, nil
+	}
 	enriched := feeds.EnrichArticle(m)
 	// Serialize only the final check and send with subscription changes.
 	as.mu.Lock()
 	defer as.mu.Unlock()
 	if as.feeds[sub.Feed] != r || !r.Options.Chats[sub.Chat] || r.Options.ForChat(sub.Chat).Paused {
+		return false, nil
+	}
+	if as.calendarBlocksLocked(sub, m) {
 		return false, nil
 	}
 	current, currentSeq, err := as.storage.First(sub)
@@ -334,6 +341,15 @@ func (as *AggregatorService) Subscriptions(id int64) map[string]types.Subscripti
 func (as *AggregatorService) Update(id int64, url string, s types.SubscriptionSettings) error {
 	as.mu.Lock()
 	defer as.mu.Unlock()
+	old := as.feeds[url]
+	if old != nil {
+		previous := old.Options.ForChat(id)
+		s.Calendar = previous.Calendar
+		s.CalendarAfter = previous.CalendarAfter
+		if previous.Paused && !s.Paused {
+			s.CalendarAfter = time.Now().UTC()
+		}
+	}
 	return as.updateLocked(id, url, s)
 }
 
@@ -350,6 +366,9 @@ func (as *AggregatorService) SetPaused(id int64, url string, paused bool) error 
 	}
 	s := r.Options.ForChat(id)
 	s.Paused = paused
+	if !paused && s.Calendar != "" {
+		s.CalendarAfter = time.Now().UTC()
+	}
 	return as.updateLocked(id, url, s)
 }
 

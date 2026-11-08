@@ -3,6 +3,7 @@ module tgRssBot
 go 1.23.0
 
 require (
+	github.com/arran4/golang-ical v0.3.2
 	codeberg.org/readeck/go-readability/v2 v2.1.3
 	github.com/PuerkitoBio/purell v1.1.1
 	github.com/heetch/confita v0.9.2
