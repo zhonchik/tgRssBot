@@ -273,20 +273,20 @@ func (as *AggregatorService) deliver() {
 			log.Warn(err)
 			continue
 		}
+		// Give every subscription one turn before returning to a backlog.
+		// A successful send schedules another pass without waiting for the ticker.
 		for _, sub := range subs {
-			for {
-				select {
-				case <-as.done:
-					return
-				default:
-				}
-				more, err := as.deliverOne(sub)
-				if err != nil {
-					log.Warn(err)
-				}
-				if err != nil || !more {
-					break
-				}
+			select {
+			case <-as.done:
+				return
+			default:
+			}
+			more, err := as.deliverOne(sub)
+			if err != nil {
+				log.Warn(err)
+			}
+			if err == nil && more {
+				as.signalDelivery()
 			}
 		}
 	}
