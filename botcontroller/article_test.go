@@ -1,9 +1,13 @@
 package botcontroller
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	xhtml "golang.org/x/net/html"
 	tb "gopkg.in/tucnak/telebot.v3"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"tgRssBot/types"
@@ -134,5 +138,67 @@ func TestLongArticleSingleMessage(t *testing.T) {
 		if err != nil || calls != 1 {
 			t.Fatalf("calls=%d error=%v", calls, err)
 		}
+	}
+}
+
+func TestTelegramUnknownPhotoErrorFallsBackToText(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		code        int
+		description string
+		wantText    bool
+	}{
+		{"production wrong port", 400, "Bad Request: invalid file HTTP URL specified: Wrong port number specified in the URL", true},
+		{"new photo rejection", 400, "Bad Request: PHOTO_INVALID_DIMENSIONS", true},
+		{"rate limit", 429, "Too Many Requests: retry after 10", false},
+		{"server error", 500, "Internal Server Error", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var methods []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				method := r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+				w.Header().Set("Content-Type", "application/json")
+				if method == "getMe" {
+					fmt.Fprint(w, `{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"Test"}}`)
+					return
+				}
+				methods = append(methods, method)
+				if method == "sendPhoto" {
+					w.WriteHeader(tc.code)
+					json.NewEncoder(w).Encode(struct {
+						OK          bool   `json:"ok"`
+						Code        int    `json:"error_code"`
+						Description string `json:"description"`
+					}{false, tc.code, tc.description})
+					return
+				}
+				var payload struct {
+					Text string `json:"text"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+					t.Error(err)
+				}
+				if !strings.Contains(payload.Text, "Headline") || !strings.Contains(payload.Text, "Source") {
+					t.Error("fallback lost article")
+				}
+				fmt.Fprint(w, `{"ok":true,"result":{"message_id":1}}`)
+			}))
+			defer server.Close()
+			bot, err := tb.NewBot(tb.Settings{URL: server.URL, Token: "test", Client: server.Client()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = sendArticle(bot.Raw, types.Message{ChatID: 1, Title: "Headline", Text: "Body", URL: "https://example.com/story", ImageURL: "https://example.com/image.jpg"})
+			want := "sendPhoto"
+			if tc.wantText {
+				want += ",sendMessage"
+			}
+			if strings.Join(methods, ",") != want {
+				t.Fatalf("got %v, want %s; error: %v", methods, want, err)
+			}
+			if (err == nil) != tc.wantText {
+				t.Fatal(err)
+			}
+		})
 	}
 }

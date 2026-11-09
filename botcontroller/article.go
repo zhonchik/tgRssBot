@@ -1,6 +1,7 @@
 package botcontroller
 
 import (
+	"encoding/json"
 	"errors"
 	tb "gopkg.in/tucnak/telebot.v3"
 	"html"
@@ -30,20 +31,33 @@ func sendArticle(call articleAPI, message types.Message) error {
 	if message.ImageURL == "" {
 		return sendText(articleWithLimit(message, 4096))
 	}
-	_, err := call("sendPhoto", map[string]interface{}{
+	response, err := call("sendPhoto", map[string]interface{}{
 		"chat_id": message.ChatID, "photo": message.ImageURL,
 		"caption": articleWithLimit(message, 1024), "parse_mode": "HTML",
 	})
+	// Read the response directly: the pinned library only types known errors
+	// and its legacy parser can miss errors when JSON fields are reordered.
+	var result struct {
+		OK          *bool  `json:"ok"`
+		Code        int    `json:"error_code"`
+		Description string `json:"description"`
+	}
+	explicitFailure := json.Unmarshal(response, &result) == nil && result.OK != nil && !*result.OK
+	if explicitFailure && err == nil {
+		err = tb.NewAPIError(result.Code, result.Description)
+	}
 	if err == nil {
 		return nil
 	}
-	// A rejected image must not suppress the article. Retry ambiguous transport
-	// failures on the next feed poll rather than marking the article delivered.
-	if err != nil {
-		var apiErr *tb.APIError
-		if !errors.As(err, &apiErr) || apiErr.Code != 400 {
-			return err
-		}
+	// Fall back only after an explicit 400 rejection; ambiguous transport,
+	// rate-limit and server failures retain the queued article for retry.
+	var apiErr *tb.APIError
+	rejected := errors.As(err, &apiErr) && apiErr.Code == 400
+	if explicitFailure && result.Code == 400 {
+		rejected = true
+	}
+	if !rejected {
+		return err
 	}
 	return sendText(articleWithLimit(message, 4096))
 }
