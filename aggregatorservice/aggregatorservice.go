@@ -17,6 +17,7 @@ import (
 type (
 	AggregatorService struct {
 		mu           sync.Mutex
+		delivery     map[storage.Subscription]deliveryStatus
 		sendMessage  func(message types.Message) error
 		storage      *storage.Storage
 		chats        map[int64]*types.Chat
@@ -182,14 +183,22 @@ func (as *AggregatorService) GetFeedList(chatID int64) (string, error) {
 
 	for feedUrl, reader := range as.feeds {
 		if reader.Options.Chats[chatID] {
+			sub := storage.Subscription{Feed: feedUrl, Chat: chatID}
+			count, err := as.storage.QueueCount(sub)
+			if err != nil {
+				return "", err
+			}
 			status := "active"
-			if reader.Options.ForChat(chatID).Paused || as.calendarBlocksLocked(storage.Subscription{Feed: feedUrl, Chat: chatID}, types.Message{}) {
-				count, err := as.storage.QueueCount(storage.Subscription{Feed: feedUrl, Chat: chatID})
-				if err != nil {
-					return "", err
-				}
+			if count > 0 {
+				status = fmt.Sprintf("active, %d queued", count)
+			}
+			if reader.Options.ForChat(chatID).Paused || as.calendarBlocksLocked(sub, types.Message{}) {
 				status = fmt.Sprintf("paused, %d queued; reason: %s", count, as.pauseReasonLocked(chatID, reader.Options.ForChat(chatID)))
 			}
+			if count > 0 {
+				status += "; " + as.deliveryDescriptionLocked(sub)
+			}
+
 			subscribed = append(subscribed, feedUrl+" ("+status+")")
 		} else {
 			suggestions = append(suggestions, feedUrl)
@@ -292,7 +301,15 @@ func (as *AggregatorService) deliver() {
 	}
 }
 
-func (as *AggregatorService) deliverOne(sub storage.Subscription) (bool, error) {
+func (as *AggregatorService) deliverOne(sub storage.Subscription) (sent bool, deliveryErr error) {
+	attempted := false
+	stage := "reading queue"
+	defer func() {
+		if attempted || deliveryErr != nil {
+			as.recordDelivery(sub, stage, deliveryErr)
+		}
+	}()
+
 	// Read the pending item without blocking pause during article fetching.
 	as.mu.Lock()
 	r := as.feeds[sub.Feed]
@@ -308,7 +325,11 @@ func (as *AggregatorService) deliverOne(sub storage.Subscription) (bool, error) 
 	if as.calendarBlocks(sub, m) {
 		return false, nil
 	}
+	attempted = true
+	as.recordDelivery(sub, "fetching article", nil)
 	enriched := feeds.EnrichArticle(m)
+	stage = "rechecking subscription"
+
 	// Serialize only the final check and send with subscription changes.
 	as.mu.Lock()
 	defer as.mu.Unlock()
@@ -319,13 +340,24 @@ func (as *AggregatorService) deliverOne(sub storage.Subscription) (bool, error) 
 		return false, nil
 	}
 	current, currentSeq, err := as.storage.First(sub)
-	if err != nil || currentSeq != seq || current != m {
+	if err != nil {
+		stage = "reading queue"
 		return false, err
 	}
+	if currentSeq != seq || current != m {
+		stage = "queue changed before send"
+		return false, nil
+	}
+	stage = "sending to Telegram"
 	if err := as.sendMessage(enriched); err != nil {
 		return false, err
 	}
-	return true, as.storage.Acknowledge(sub, seq)
+	stage = "acknowledging delivered article"
+	if err := as.storage.Acknowledge(sub, seq); err != nil {
+		return true, err
+	}
+	stage = "delivered"
+	return true, nil
 }
 
 func (as *AggregatorService) Subscriptions(id int64) map[string]types.SubscriptionSettings {

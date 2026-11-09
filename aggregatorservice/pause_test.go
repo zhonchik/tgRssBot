@@ -52,7 +52,7 @@ func TestPausedQueueSurvivesRestartAndSendFailure(t *testing.T) {
 	if sent, err := s.deliverOne(sub); sent || err != nil {
 		t.Fatal(sent, err)
 	}
-	checkList("paused, 2 queued; reason: manual pause")
+	checkList("paused, 2 queued; reason: manual pause; no delivery attempt since restart")
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -63,11 +63,11 @@ func TestPausedQueueSurvivesRestartAndSendFailure(t *testing.T) {
 		t.Fatal(saved, err)
 	}
 	s.feeds[feed] = feeds.NewFeedReader(saved[0])
-	checkList("paused, 2 queued; reason: manual pause")
+	checkList("paused, 2 queued; reason: manual pause; no delivery attempt since restart")
 	if err := s.SetPaused(1, feed, false); err != nil {
 		t.Fatal(err)
 	}
-	checkList("active")
+	checkList("active, 2 queued; no delivery attempt since restart")
 	s.sendMessage = func(types.Message) error { return errors.New("offline") }
 	if _, err := s.deliverOne(sub); err == nil {
 		t.Fatal("expected send failure")
