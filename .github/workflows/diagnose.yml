@@ -1,0 +1,55 @@
+name: Diagnose production
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - name: Install SSH credentials
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          test -n "$SSH_KEY"
+          test -n "$KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Read service state and check F1News from production
+        run: |
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=20 tgrssbot-deploy@v245006.hosted-by-vdsina.com 'python3 -' <<'PY'
+          import subprocess, urllib.request, xml.etree.ElementTree as ET, re
+          state = subprocess.run(['systemctl', 'show', 'tgrssbot.service', '--property=ActiveState,SubState,NRestarts,ExecMainStartTimestamp'], capture_output=True, text=True)
+          print(state.stdout)
+          request = urllib.request.Request('https://www.f1news.ru/export/news.xml', headers={'User-Agent': 'Gofeed/1.0'})
+          try:
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  data = response.read(5 * 1024 * 1024)
+                  print('F1News HTTP:', response.status)
+              root = ET.fromstring(data)
+              items = root.findall('.//item')
+              print('F1News items:', len(items))
+              print('First publication dates:', [i.findtext('pubDate') for i in items[:3]])
+          except Exception as error:
+              print('F1News fetch failure:', type(error).__name__, str(error))
+          journal = subprocess.run(['journalctl', '-u', 'tgrssbot.service', '--since', '30 minutes ago', '-n', '500', '--no-pager', '-o', 'cat'], capture_output=True, text=True)
+          print('Journal access:', journal.returncode, journal.stderr.strip())
+          count = 0
+          for line in journal.stdout.splitlines():
+              if not re.search(r'Failed to update feed|Bad Request|telebot:|429|Forbidden|level=(warning|error)', line, re.I):
+                  continue
+              # Do not publish credentials, chat identifiers, or private URLs.
+              line = re.sub(r'https?://\S+', '[URL redacted]', line)
+              line = re.sub(r'\b\d+:[A-Za-z0-9_-]+', '[token redacted]', line)
+              line = re.sub(r'\b\d{6,}\b', '[identifier redacted]', line)
+              print(line[:800])
+              count += 1
+          print('Matching diagnostic lines:', count)
+          PY
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
