@@ -36,9 +36,9 @@ func TestArticleDelivery(t *testing.T) {
 		name, body, photoError string
 		want                   []string
 	}{
-		{"short", "Lead.\n\nRest.", "", []string{"sendPhoto"}},
-		{"fits caption", strings.Repeat("a", 800), "", []string{"sendPhoto"}},
-		{"long", strings.Repeat("word ", 600), "", []string{"sendPhoto"}},
+		{"short", "Lead.\n\nRest.", "", []string{"sendPhoto", "sendMessage"}},
+		{"fits caption", strings.Repeat("a", 800), "", []string{"sendPhoto", "sendMessage"}},
+		{"long", strings.Repeat("word ", 600), "", []string{"sendPhoto", "sendMessage"}},
 		{"bad image", "Lead.", "Bad Request: failed to get HTTP URL content", []string{"sendPhoto", "sendMessage"}},
 		{"transport", "Lead.", "timeout", []string{"sendPhoto"}},
 	} {
@@ -49,27 +49,8 @@ func TestArticleDelivery(t *testing.T) {
 				p := payload.(map[string]interface{})
 
 				if method == "sendPhoto" {
-					caption := p["caption"].(string)
-					if !strings.HasPrefix(caption, "<b>Headline</b>") || !strings.Contains(caption, "Source") {
-						t.Fatal("caption must include headline and article link")
-					}
-					root, parseErr := xhtml.Parse(strings.NewReader(caption))
-					if parseErr != nil {
-						t.Fatal(parseErr)
-					}
-					visible := ""
-					var walk func(*xhtml.Node)
-					walk = func(n *xhtml.Node) {
-						if n.Type == xhtml.TextNode {
-							visible += n.Data
-						}
-						for c := n.FirstChild; c != nil; c = c.NextSibling {
-							walk(c)
-						}
-					}
-					walk(root)
-					if len(utf16.Encode([]rune(visible))) > 1024 {
-						t.Fatal("oversized caption")
+					if _, ok := p["caption"]; ok {
+						t.Fatal("photo should have no article caption")
 					}
 					if tc.photoError != "" {
 						if tc.name == "bad image" {
@@ -96,22 +77,18 @@ func TestLongArticleSingleMessage(t *testing.T) {
 		limit := 4096
 		if photo {
 			m.ImageURL = "https://example.com/image.jpg"
-			limit = 1024
 		}
 		calls := 0
 		err := sendArticle(func(method string, payload interface{}) ([]byte, error) {
 			calls++
 			p := payload.(map[string]interface{})
-			key := "text"
-			if photo {
-				key = "caption"
-				if method != "sendPhoto" {
-					t.Fatal(method)
-				}
-			} else if method != "sendMessage" {
+			if method == "sendPhoto" {
+				return nil, nil
+			}
+			if method != "sendMessage" {
 				t.Fatal(method)
 			}
-			markup := p[key].(string)
+			markup := p["text"].(string)
 			if !strings.Contains(markup, "…") || !strings.Contains(markup, `href="https://example.com">Source</a>`) {
 				t.Fatal("missing truncation or source")
 			}
@@ -135,7 +112,11 @@ func TestLongArticleSingleMessage(t *testing.T) {
 			}
 			return nil, nil
 		}, m)
-		if err != nil || calls != 1 {
+		wantCalls := 1
+		if photo {
+			wantCalls = 2
+		}
+		if err != nil || calls != wantCalls {
 			t.Fatalf("calls=%d error=%v", calls, err)
 		}
 	}
@@ -200,5 +181,23 @@ func TestTelegramUnknownPhotoErrorFallsBackToText(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestPhotoArticlePreservesLongBodyAndTextFailure(t *testing.T) {
+	body := strings.Repeat("a", 3000)
+	failure := errors.New("text delivery failed")
+	err := sendArticle(func(method string, payload interface{}) ([]byte, error) {
+		if method == "sendMessage" {
+			text := payload.(map[string]interface{})["text"].(string)
+			if strings.Count(text, "a") < 3000 {
+				t.Fatal("article truncated to caption size")
+			}
+			return nil, failure
+		}
+		return nil, nil
+	}, types.Message{Text: body, ImageURL: "https://example.com/photo.jpg"})
+	if !errors.Is(err, failure) {
+		t.Fatalf("lost text failure: %v", err)
 	}
 }

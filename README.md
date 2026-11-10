@@ -80,12 +80,11 @@ Inspect the server with `systemctl status tgrssbot.service` and
 
 ## News presentation
 
-News uses the main picture with a bold headline beneath it in the same message.
+News sends the main picture separately, followed by a text message with a bold headline.
 The first paragraph (up to a short excerpt for long paragraphs) is visible;
 remaining article text is in Telegram expandable quotes. Each article includes an
-**Source** link, and automatic web previews are disabled. The picture,
-headline, excerpt, and link share one photo caption. Each article is sent as one
-message: text is shortened with an ellipsis to fit the caption or message limit,
+**Source** link, and automatic web previews are disabled. Article text uses the 4,096-character message limit instead of the smaller photo
+caption limit. Text is shortened with an ellipsis to fit the message limit,
 with the Source link retained for reading the full article. Missing or rejected
 pictures fall back to a single text message.
 

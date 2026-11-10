@@ -33,7 +33,6 @@ func sendArticle(call articleAPI, message types.Message) error {
 	}
 	response, err := call("sendPhoto", map[string]interface{}{
 		"chat_id": message.ChatID, "photo": message.ImageURL,
-		"caption": articleWithLimit(message, 1024), "parse_mode": "HTML",
 	})
 	// Read the response directly: the pinned library only types known errors
 	// and its legacy parser can miss errors when JSON fields are reordered.
@@ -47,7 +46,7 @@ func sendArticle(call articleAPI, message types.Message) error {
 		err = tb.NewAPIError(result.Code, result.Description)
 	}
 	if err == nil {
-		return nil
+		return sendText(articleWithLimit(message, 4096))
 	}
 	// Fall back only after an explicit 400 rejection; ambiguous transport,
 	// rate-limit and server failures retain the queued article for retry.
